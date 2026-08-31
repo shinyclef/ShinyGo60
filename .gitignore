@@ -1,0 +1,86 @@
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# IDE and editor state
+.idea/
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.swp
+*~
+
+# Local settings and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Logs, temporary files, and crash dumps
+*.log
+*.tmp
+*.temp
+*.bak
+*.dmp
+
+# ZMK, Zephyr, CMake, and Ninja build state
+.west/
+build/
+build-*/
+out/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+build.ninja
+.ninja_deps
+.ninja_log
+
+# Compiled firmware and native build products
+*.uf2
+*.hex
+*.bin
+*.elf
+*.map
+*.lst
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.exe
+
+# .NET build and user state
+[Bb]in/
+[Oo]bj/
+[Tt]est[Rr]esults/
+artifacts/
+packages/
+*.nupkg
+*.snupkg
+
+# Node.js dependencies and generated output
+node_modules/
+coverage/
+dist/
+.npm/
+.pnpm-store/
+.yarn/cache/
+
+# Python environments, caches, and generated output
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
