@@ -190,7 +190,7 @@ source; `Custom Firmware/Generated`, `Output`, `bin`, and `obj` are disposable a
 
 ## Current status
 
-The project has completed workspace scaffolding and is ready for the first enabled firmware feature. The repository currently contains:
+The project has completed workspace scaffolding, built its first enabled firmware feature, and passed its hardware smoke test. The repository currently contains:
 
 - The active MoErgo-exported `.keymap` for the first build fixture.
 - A MoErgo Layout Editor JSON snapshot, retained as a reference rather than a version-one build input.
@@ -199,7 +199,7 @@ The project has completed workspace scaffolding and is ready for the first enabl
 - A pinned, byte-reproducible v25.11 baseline build and its recorded build evidence.
 - A pinned, single-revision Go60 firmware image definition, offline build scripts, and scoped cleanup.
 - A .NET 10 C# solution with shared protocol and diagnostic libraries, headless builder and companion cores, WPF application shells, and offline scaffold tests.
-- An out-of-tree ZMK module skeleton included through the supported MoErgo build hook.
+- An out-of-tree ZMK module with a central-only Step 5 diagnostic included through the supported MoErgo build hook.
 
 The baseline UF2 has passed reproducible build, structural validation, and an initial hardware flash test. Its exact pins, hashes, measurements, and remaining
 regression checklist are recorded in [Custom Firmware/BuildSupport/BASELINE_V25_11.md](Custom%20Firmware/BuildSupport/BASELINE_V25_11.md).
@@ -208,9 +208,14 @@ The selected Docker backend retains a 4.46 GB image and builds the same UF2 offl
 than constructing it locally. Measurements and cleanup details are recorded in
 [Custom Firmware/BuildSupport/STEP3_BUILD_ENVIRONMENT.md](Custom%20Firmware/BuildSupport/STEP3_BUILD_ENVIRONMENT.md).
 
-The module-aware firmware build remains byte-for-byte identical to the tested baseline because its feature switch is disabled. The C# shells and contracts compile,
-but the functional build pipeline, firmware communication layer, and companion behavior have not yet been implemented. Step 4 evidence is recorded in
-[Custom Firmware/BuildSupport/STEP4_SCAFFOLD.md](Custom%20Firmware/BuildSupport/STEP4_SCAFFOLD.md).
+The first enabled module feature embeds a versioned test identity and internal checksum only in the left/central firmware. It creates no host transport and changes
+no key behavior. The right/peripheral UF2 remains byte-for-byte identical to the tested baseline; the left image grows by 136 bytes of flash and 8 bytes of RAM.
+The combined customized UF2 passed offline structural and isolation checks, was flashed to both halves, and was reported working by the user. A brief state that
+initially appeared abnormal resolved without intervention and has not been confirmed as a persistent firmware fault. Step 5 evidence is recorded in
+[Custom Firmware/BuildSupport/STEP5_MINIMAL_FEATURE.md](Custom%20Firmware/BuildSupport/STEP5_MINIMAL_FEATURE.md).
+
+The C# shells and contracts compile, but the functional build pipeline, firmware communication layer, and companion behavior have not yet been implemented. Step 4
+scaffold evidence is recorded in [Custom Firmware/BuildSupport/STEP4_SCAFFOLD.md](Custom%20Firmware/BuildSupport/STEP4_SCAFFOLD.md).
 
 ## Design principles
 

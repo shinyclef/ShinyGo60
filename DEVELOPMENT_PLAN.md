@@ -1,6 +1,6 @@
 # ShinyGo60 Development Plan
 
-Status: Step 4 complete; Step 2 hardware smoke test passed and detailed verification remains; Step 5 is next
+Status: Step 5 complete; the detailed Step 2 checklist remains; Step 6 is next
 
 Last updated: 2026-09-01
 
@@ -192,28 +192,32 @@ module through `ZMK_EXTRA_MODULES` and produced the exact hardware-tested baseli
 
 Depends on: Step 3.
 
-## Step 5: Integrate the smallest firmware feature
+## Step 5: Integrate the smallest firmware feature (complete)
 
 Goal: prove custom code can be added without disturbing normal keyboard behavior.
 
 Work:
 
-- [ ] Compile a central-only ShinyGo60 feature from the out-of-tree module.
-- [ ] Embed a ShinyGo60 feature version and fixed test layout identifier.
-- [ ] Expose a harmless diagnostic value internally.
-- [ ] Confirm that the right/peripheral side does not attempt to serve host protocol traffic.
-- [ ] Flash both halves and rerun the baseline behavior checklist.
-- [ ] Record flash and RAM growth before adding transport code.
+- [x] Compile a central-only ShinyGo60 feature from the out-of-tree module.
+- [x] Embed a ShinyGo60 feature version and fixed test layout identifier.
+- [x] Expose a harmless diagnostic value internally.
+- [x] Confirm that the right/peripheral side does not attempt to serve host protocol traffic.
+- [x] Flash both halves and confirm normal behavior; the user reported that the build works after a brief self-resolving startup anomaly.
+- [x] Record flash and RAM growth before adding transport code.
 
 Deliverables:
 
-- First customized UF2 containing the no-op ShinyGo60 module.
-- Firmware size and memory baseline.
+- [x] First customized UF2 containing the no-op ShinyGo60 module.
+- [x] Firmware size and memory baseline.
 
 Done when:
 
-- Normal typing and every checked layout behavior remain unchanged.
-- The module is built from separate source rather than inserted into the exported keymap.
+- [x] Normal typing and the checked layout behavior remain unchanged.
+- [x] The module is built from separate source rather than inserted into the exported keymap.
+
+Implementation, binary-isolation, size, flash, and hardware evidence are recorded in
+[Custom Firmware/BuildSupport/STEP5_MINIMAL_FEATURE.md](Custom%20Firmware/BuildSupport/STEP5_MINIMAL_FEATURE.md). The user's overall working-build report completes
+the Step 5 hardware smoke gate without claiming the item-by-item transport and rollback verification that remains open in Step 2.
 
 Depends on: Step 4.
 

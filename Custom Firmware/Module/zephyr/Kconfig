@@ -2,5 +2,12 @@ menuconfig SHINYGO60
     bool "ShinyGo60 integration"
     default n
     help
-      Enable the ShinyGo60 firmware integration. The feature remains disabled
-      during workspace scaffolding and is enabled deliberately by later steps.
+      Enable the ShinyGo60 firmware integration.
+
+config SHINYGO60_CENTRAL
+    bool
+    default y if SHINYGO60 && BOARD_GO60_LH
+    help
+      Build ShinyGo60 runtime code only for the Go60 central/left image. The
+      right/peripheral image shares the configuration but compiles no runtime
+      source from this module.

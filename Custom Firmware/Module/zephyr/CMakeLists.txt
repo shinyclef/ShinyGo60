@@ -1,4 +1,5 @@
-if(CONFIG_SHINYGO60)
+if(CONFIG_SHINYGO60_CENTRAL)
   zephyr_library()
+  zephyr_library_include_directories(include)
   zephyr_library_sources(src/shinygo60.c)
 endif()

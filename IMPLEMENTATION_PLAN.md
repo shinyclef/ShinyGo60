@@ -1,6 +1,6 @@
 # ShinyGo60 Implementation Plan
 
-Status: workspace scaffold complete; recovery preparation skipped by user; baseline hardware smoke test passed
+Status: first central-only firmware feature passed its hardware smoke test; recovery preparation skipped by user; detailed baseline verification remains
 
 Last updated: 2026-09-01
 
