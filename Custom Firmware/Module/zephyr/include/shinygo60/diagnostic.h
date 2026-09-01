@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define SHINYGO60_FEATURE_VERSION "0.1.0-step5"
+#define SHINYGO60_FEATURE_VERSION "0.2.1-step6"
 #define SHINYGO60_TEST_LAYOUT_IDENTIFIER "00000000-0000-0000-0000-000000000005"
 
 struct shinygo60_diagnostic {

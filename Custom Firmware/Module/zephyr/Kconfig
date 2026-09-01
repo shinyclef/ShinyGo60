@@ -11,3 +11,12 @@ config SHINYGO60_CENTRAL
       Build ShinyGo60 runtime code only for the Go60 central/left image. The
       right/peripheral image shares the configuration but compiles no runtime
       source from this module.
+
+config SHINYGO60_TRANSPORT_SPIKE
+    bool
+    default y if SHINYGO60_CENTRAL
+    depends on SHINYGO60_CENTRAL
+    select RING_BUFFER
+    help
+      Add the provisional Step 6 Hello transport over USB CDC and encrypted
+      Bluetooth GATT on the Go60 central.

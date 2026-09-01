@@ -1,6 +1,6 @@
 # ShinyGo60 Development Plan
 
-Status: Step 5 complete; the detailed Step 2 checklist remains; Step 6 is next
+Status: corrected Step 6 v0.2.1 passed TRRS, USB, Bluetooth, and transport switching; remaining gate G3 security and reconnection tests are pending
 
 Last updated: 2026-09-01
 
@@ -233,18 +233,26 @@ Hello -> HelloResult
 
 Work:
 
-- [ ] Add a USB CDC/ACM endpoint on the central/left half.
-- [ ] Add a custom encrypted BLE GATT service on the central/left half.
-- [ ] Require a bonded/encrypted Bluetooth connection for writes and indications.
-- [ ] Build a small C# diagnostic client using the common transport contract.
-- [ ] Discover the correct USB endpoint without selecting unrelated serial devices.
-- [ ] Discover the GATT service on the already paired Go60.
-- [ ] Send identical application bytes over both transports and receive an acknowledgement.
+- [x] Add a USB CDC/ACM endpoint on the central/left half.
+- [x] Add a custom encrypted BLE GATT service on the central/left half.
+- [x] Require a bonded/encrypted Bluetooth connection for writes and indications.
+- [x] Build a small C# diagnostic client using the common transport contract.
+- [x] Discover the correct USB endpoint without selecting unrelated serial devices.
+- [x] Discover the GATT service on the already paired Go60.
+- [x] Send identical application bytes over both transports and receive an acknowledgement.
 - [ ] Test a fresh pairing and an existing pairing after a firmware update.
 - [ ] Test Windows GATT caching, sleep/resume, radio disable/enable, range loss, keyboard power cycle, and all relevant Go60 host profiles.
-- [ ] Test USB-to-Bluetooth and Bluetooth-to-USB switching.
+- [x] Test USB-to-Bluetooth and Bluetooth-to-USB switching.
 - [ ] Measure round-trip latency, idle CPU use, and observable wireless power impact.
 - [ ] Verify normal keyboard operation with the diagnostic client absent.
+
+Implementation and offline verification reached the physical-test checkpoint on 2026-09-01. The packaged UF2, shared packet format, transport security model,
+client commands, memory measurements, and remaining hardware matrix are recorded in
+[Custom Firmware/BuildSupport/STEP6_DUAL_TRANSPORT.md](Custom%20Firmware/BuildSupport/STEP6_DUAL_TRANSPORT.md). The remaining boxes stay open until the flashed
+keyboard supplies hardware evidence; gate G3 is still pending. Physical testing found that v0.2.0 broke TRRS by changing physical UART0 from asynchronous to
+interrupt-driven mode. Corrected v0.2.1 restores the required per-device UART mode and adds compile-time guards. After flashing it, the user confirmed working TRRS
+and Bluetooth operation. Corrected-build USB and Bluetooth exchanges passed, followed by a successful USB-to-Bluetooth-to-USB run. The remaining security and
+reconnection matrix is still open.
 
 Deliverables:
 

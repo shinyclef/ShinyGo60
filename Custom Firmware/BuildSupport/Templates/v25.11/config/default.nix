@@ -11,7 +11,12 @@ let
     extraModules = [ shinyGo60Module ];
   };
 
-  go60_left = firmware.zmk.override (common // { board = "go60_lh"; });
+  # The pinned Studio snippet supplies only the proven composite USB CDC node
+  # and Kconfig settings. ShinyGo60 provides its own small protocol handler.
+  go60_left = firmware.zmk.override (common // {
+    board = "go60_lh";
+    snippets = [ "studio-rpc-usb-uart" ];
+  });
   go60_right = firmware.zmk.override (common // { board = "go60_rh"; });
   combined = firmware.combine_uf2 go60_left go60_right "go60";
 
