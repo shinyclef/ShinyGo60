@@ -84,3 +84,10 @@ venv/
 .coverage
 htmlcov/
 
+# Disposable upstream firmware workspaces and source caches
+/Custom Firmware/Generated/
+/Output/
+
+# Runtime builder input
+/Input/*
+!/Input/README.md

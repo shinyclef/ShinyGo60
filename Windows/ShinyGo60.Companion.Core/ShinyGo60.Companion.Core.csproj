@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>ShinyGo60.Companion.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ShinyGo60.Diagnostics\ShinyGo60.Diagnostics.csproj" />
+    <ProjectReference Include="..\ShinyGo60.Protocol\ShinyGo60.Protocol.csproj" />
+  </ItemGroup>
+</Project>

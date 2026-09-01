@@ -1,0 +1,6 @@
+menuconfig SHINYGO60
+    bool "ShinyGo60 integration"
+    default n
+    help
+      Enable the ShinyGo60 firmware integration. The feature remains disabled
+      during workspace scaffolding and is enabled deliberately by later steps.

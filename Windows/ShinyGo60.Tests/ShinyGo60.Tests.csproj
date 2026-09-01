@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ShinyGo60.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ShinyGo60.Builder.Core\ShinyGo60.Builder.Core.csproj" />
+    <ProjectReference Include="..\ShinyGo60.Companion.Core\ShinyGo60.Companion.Core.csproj" />
+    <ProjectReference Include="..\ShinyGo60.Diagnostics\ShinyGo60.Diagnostics.csproj" />
+    <ProjectReference Include="..\ShinyGo60.Protocol\ShinyGo60.Protocol.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,6 +1,6 @@
 # ShinyGo60 Implementation Plan
 
-Status: planning and feasibility
+Status: workspace scaffold complete; recovery preparation skipped by user; baseline hardware smoke test passed
 
 Last updated: 2026-09-01
 
@@ -15,7 +15,7 @@ The normal layout workflow should remain simple:
 3. Put that file in the builder's `Input` folder.
 4. Double-click `ShinyGo60.Builder.exe`.
 5. Find the customized UF2 and its matching manifest in `Output`.
-6. Flash the UF2 to both halves of the Go60.
+6. Manually flash the same UF2 to both halves of the Go60.
 7. Run the ShinyGo60 Windows companion for layer control and status display.
 
 An end-user release should look approximately like this:
@@ -43,13 +43,15 @@ Generated firmware files should never need manual editing. Updating the layout s
 
 ### `.keymap` is the version-one input
 
-The first version will accept a MoErgo-exported `.keymap` file. JSON import is not required.
+The first version will accept a MoErgo-exported `.keymap` file. JSON import is out of scope for version one.
 
 MoErgo documents the `.keymap` export as a ZMK DTSI fragment intended for advanced uses such as local compilation. MoErgo also labels its JSON export as experimental and warns that its format may change. Restricting version one to `.keymap` avoids maintaining a second, unstable conversion path.
 
 The builder should preserve the exported keymap rather than recreating its bindings. This matters because a layout may contain custom behaviors, macros, hold-taps, combos, input processors, touchpad configuration, and other ZMK definitions.
 
 ### C# for Windows tooling
+
+C# tooling and the widget will support Windows 11 in version one.
 
 C# is the preferred language for:
 
@@ -63,6 +65,8 @@ C# is the preferred language for:
 WPF is the initial recommendation for the Windows UI because the project is Windows-only and needs a small, unobtrusive desktop widget rather than a cross-platform interface.
 
 The C# programs should be published as self-contained Windows executables so the user does not have to install the .NET runtime. A single-file release is preferred when its library choices permit it.
+
+Firmware flashing will remain a deliberate manual copy to each half for version one. The builder produces the artifact but does not automatically write to bootloader drives. Mouse integration remains based on ordinary configurable Windows shortcuts rather than a Logitech-specific API.
 
 ### Native code for keyboard firmware
 
@@ -104,9 +108,9 @@ Consequently:
 - The same MoErgo-produced UF2 is still flashed to both halves.
 - Inter-half communication may use BLE or TRRS independently of whether the host connection uses BLE or USB.
 
-## 4. Proposed development repository structure
+## 4. Development repository structure
 
-The exact names can change during scaffolding, but responsibilities should remain separated:
+The scaffold keeps maintained source, disposable build state, and user output separated:
 
 ```text
 ShinyGo60/
@@ -117,7 +121,10 @@ ShinyGo60/
 |-- Key Configuration/          # Layout Editor exports and snapshots
 |-- Windows/
 |   |-- ShinyGo60.sln
+|   |-- ShinyGo60.Diagnostics/
+|   |-- ShinyGo60.Builder.Core/
 |   |-- ShinyGo60.Builder/
+|   |-- ShinyGo60.Companion.Core/
 |   |-- ShinyGo60.Companion/
 |   |-- ShinyGo60.Protocol/
 |   `-- ShinyGo60.Tests/
@@ -164,13 +171,21 @@ The firmware and manifest must contain the same layout identifier. The companion
 
 ### Reproducible build environment
 
-MoErgo's official Go60 configuration repository already supplies a Windows `build.bat` backed by Docker, Nix, and the MoErgo ZMK distribution. The first implementation should build on that supported path rather than assembling an unrelated compiler environment.
+MoErgo's official Go60 configuration repository supplies a Windows `build.bat` backed by Docker, Nix, and the MoErgo ZMK distribution. The selected backend preserves
+that supported toolchain in a pinned, single-revision, Go60-only image instead of preloading several firmware revisions.
 
-The C# builder can hide the commands and present a friendly experience, but the initial local version will probably require Docker Desktop. The first build may download a large image and take considerably longer than cached builds.
+The C# builder will hide the commands and present a friendly experience, but version one requires Docker Desktop. It will pull a published, digest-pinned image when
+the image is absent and will run normal firmware builds without container network access. The validated image is 949,287,144 bytes as Docker content and 4.46 GB
+unpacked. A warm offline firmware build took 14.857 seconds.
 
 A self-contained C# executable does not make the embedded compiler self-contained. Eliminating Docker would require either bundling a large toolchain or moving compilation to a build service. Those alternatives are not version-one requirements.
 
 All firmware dependencies must be pinned to tested revisions. Updating the MoErgo ZMK revision should be an explicit, tested operation rather than silently following its latest branch.
+
+Constructing the image locally is a maintainer and recovery operation requiring approximately 10 GB free during construction. The user-facing path pulls the
+prebuilt image because local construction temporarily retained a 4.496 GB BuildKit cache alongside the completed image. Cleanup is restricted to named,
+ShinyGo60-owned resources; global Docker pruning is forbidden. The complete measurements are in
+[Custom Firmware/BuildSupport/STEP3_BUILD_ENVIRONMENT.md](Custom%20Firmware/BuildSupport/STEP3_BUILD_ENVIRONMENT.md).
 
 ## 6. Firmware module
 
@@ -432,7 +447,7 @@ Never automate flashing until the bootloader-drive identification and failure be
 - Accepting MoErgo JSON as a build input.
 - Direct integration with Logitech software or a Logitech-specific API.
 - Editing the layout within the ShinyGo60 application.
-- Supporting operating systems other than Windows for the companion and widget.
+- Supporting operating systems other than Windows 11 for the companion and widget.
 - Hiding an unreliable battery implementation behind partial or stale values.
 - Requiring users to edit generated ZMK files manually.
 
@@ -446,7 +461,7 @@ These choices should be resolved by their associated milestone rather than assum
 - Whether persistent external layer selection survives keyboard reboot.
 - Exact rule when both USB and Bluetooth connections are simultaneously available.
 - Final WPF widget positioning method and multi-monitor behavior.
-- Whether the builder ships with a prebuilt Docker image or builds it locally on first use.
+- Registry location and immutable digest for the prebuilt Docker image when it is published.
 - Whether flashing remains manual or gains an explicitly confirmed helper after safe bootloader detection is proven.
 
 ## 15. Authoritative references
@@ -460,4 +475,3 @@ These choices should be resolved by their associated milestone rather than assum
 - [ZMK Studio RPC protocol and its USB/BLE transports](https://zmk.dev/docs/development/studio-rpc-protocol)
 - [Microsoft Windows Bluetooth GATT client APIs](https://learn.microsoft.com/windows/apps/develop/devices-sensors/gatt-client)
 - [Microsoft .NET single-file deployment](https://learn.microsoft.com/dotnet/core/deploying/single-file/overview)
-

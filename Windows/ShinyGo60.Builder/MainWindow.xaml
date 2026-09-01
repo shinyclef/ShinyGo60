@@ -1,0 +1,17 @@
+<Window x:Class="ShinyGo60.Builder.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ShinyGo60 Firmware Builder"
+        Width="640"
+        Height="360"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="32">
+        <StackPanel VerticalAlignment="Center">
+            <TextBlock FontSize="28" FontWeight="SemiBold" Text="ShinyGo60 Firmware Builder" />
+            <TextBlock Margin="0,12,0,0"
+                       FontSize="15"
+                       Text="The application foundation is ready. The keymap-to-UF2 workflow will be added in a later development step."
+                       TextWrapping="Wrap" />
+        </StackPanel>
+    </Grid>
+</Window>
