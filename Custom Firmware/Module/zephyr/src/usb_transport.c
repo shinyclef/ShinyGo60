@@ -10,7 +10,7 @@
 #include <shinygo60/protocol.h>
 
 #define USB_UART_NODE DT_CHOSEN(zmk_studio_rpc_uart)
-#define USB_TX_BUFFER_SIZE (SHINYGO60_PACKET_SIZE * 2U)
+#define USB_TX_BUFFER_SIZE (SHINYGO60_PACKET_SIZE * 4U)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(USB_UART_NODE, okay), "The ShinyGo60 USB CDC UART is unavailable");
 BUILD_ASSERT(IS_ENABLED(CONFIG_USB_CDC_ACM), "The ShinyGo60 USB transport requires CDC ACM");
@@ -22,11 +22,10 @@ static const struct device *const usb_uart = DEVICE_DT_GET(USB_UART_NODE);
 static const uint8_t packet_magic[] = {
     SHINYGO60_PACKET_MAGIC_0,
     SHINYGO60_PACKET_MAGIC_1,
-    SHINYGO60_PACKET_MAGIC_2,
-    SHINYGO60_PACKET_MAGIC_3,
 };
 
 RING_BUF_DECLARE(usb_tx_buffer, USB_TX_BUFFER_SIZE);
+static struct k_spinlock usb_tx_lock;
 
 static uint8_t usb_request[SHINYGO60_PACKET_SIZE];
 static size_t usb_request_length;
@@ -53,10 +52,9 @@ static void receive_byte(uint8_t byte)
     }
 
     uint8_t response[SHINYGO60_PACKET_SIZE];
-    if (shinygo60_protocol_handle(usb_request, usb_request_length, response) &&
-        ring_buf_space_get(&usb_tx_buffer) >= sizeof(response) &&
-        ring_buf_put(&usb_tx_buffer, response, sizeof(response)) == sizeof(response)) {
-        uart_irq_tx_enable(usb_uart);
+    if (shinygo60_protocol_handle(
+            SHINYGO60_TRANSPORT_USB, usb_request, usb_request_length, response)) {
+        (void)shinygo60_usb_send(response);
     }
 
     usb_request_length = 0U;
@@ -82,19 +80,37 @@ static void usb_uart_callback(const struct device *device, void *user_data)
         }
     }
 
-    while (uart_irq_tx_ready(device) && ring_buf_size_get(&usb_tx_buffer) > 0U) {
+    while (uart_irq_tx_ready(device)) {
+        k_spinlock_key_t key = k_spin_lock(&usb_tx_lock);
+        if (ring_buf_is_empty(&usb_tx_buffer)) {
+            uart_irq_tx_disable(device);
+            k_spin_unlock(&usb_tx_lock, key);
+            break;
+        }
+
         uint8_t *pending;
         uint32_t pending_length = ring_buf_get_claim(&usb_tx_buffer, &pending, ring_buf_size_get(&usb_tx_buffer));
         int sent = uart_fifo_fill(device, pending, pending_length);
         ring_buf_get_finish(&usb_tx_buffer, sent > 0 ? (uint32_t)sent : 0U);
+        k_spin_unlock(&usb_tx_lock, key);
         if (sent <= 0) {
             break;
         }
     }
+}
 
-    if (ring_buf_is_empty(&usb_tx_buffer)) {
-        uart_irq_tx_disable(device);
+bool shinygo60_usb_send(const uint8_t packet[SHINYGO60_PACKET_SIZE])
+{
+    k_spinlock_key_t key = k_spin_lock(&usb_tx_lock);
+    bool queued = ring_buf_space_get(&usb_tx_buffer) >= SHINYGO60_PACKET_SIZE &&
+                  ring_buf_put(&usb_tx_buffer, packet, SHINYGO60_PACKET_SIZE) ==
+                      SHINYGO60_PACKET_SIZE;
+    k_spin_unlock(&usb_tx_lock, key);
+
+    if (queued) {
+        uart_irq_tx_enable(usb_uart);
     }
+    return queued;
 }
 
 static int shinygo60_usb_initialize(void)

@@ -1,5 +1,8 @@
 # Step 6 dual-transport spike
 
+> Historical Step 6 record. Protocol 1.0 and the current diagnostic command are documented in
+> [STEP9_PROTOCOL_V1.md](STEP9_PROTOCOL_V1.md).
+
 Status: corrected v0.2.1 passed TRRS, USB, Bluetooth, and transport-switching checks; remaining gate G3 security and reconnection tests are pending
 
 Recorded: 2026-09-01 on Windows 11

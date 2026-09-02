@@ -1,6 +1,6 @@
 # ShinyGo60 Development Plan
 
-Status: Step 8 complete; corrected Step 6 passed core transport checks, with its remaining gate G3 security and reconnection tests still pending
+Status: Step 10 complete; Step 11 battery feasibility is next
 
 Last updated: 2026-09-02
 
@@ -343,35 +343,48 @@ Done when:
 
 Depends on: Steps 3, 5, and 7. Can progress alongside Step 6, but its production UX waits for the transport gate.
 
-## Step 9: Lock and test the version-one protocol
+## Step 9: Lock and test the version-one protocol (complete)
 
 Goal: replace the transport-spike message with a small, stable application protocol.
 
 Work:
 
-- [ ] Choose and document framing and message encoding based on the USB/BLE spike results.
-- [ ] Define `Hello`, capabilities, and layout-identifier negotiation.
-- [ ] Define initial `StateSnapshot` and `LayerChanged` messages.
-- [ ] Define persistent set and momentary press, renew, and release commands.
-- [ ] Define command results and structured errors.
-- [ ] Bound every message, collection, string, and receive buffer.
-- [ ] Add session IDs, command IDs, and a state revision or sequence number.
-- [ ] Allow only one command-owning session at a time.
-- [ ] Require a fresh handshake and snapshot after every transport switch.
-- [ ] Define duplicate, delayed, reordered, truncated, corrupted, mismatched-layout, and unsupported-version behavior.
-- [ ] Create shared golden byte vectors consumed by both C and C# tests.
+- [x] Choose and document framing and message encoding based on the USB/BLE spike results.
+- [x] Define `Hello`, capabilities, and layout-identifier negotiation.
+- [x] Define initial `StateSnapshot` and `LayerChanged` messages.
+- [x] Define persistent set and momentary press, renew, and release commands.
+- [x] Define command results and structured errors.
+- [x] Bound every message, collection, string, and receive buffer.
+- [x] Add session IDs, command IDs, and a state revision or sequence number.
+- [x] Allow only one command-owning session at a time.
+- [x] Require a fresh handshake and snapshot after every transport switch.
+- [x] Define duplicate, delayed, reordered, truncated, corrupted, mismatched-layout, and unsupported-version behavior.
+- [x] Create shared golden byte vectors consumed by both C and C# tests.
 
 Deliverables:
 
-- Version-one protocol specification.
-- Matching C and C# codecs.
-- Shared test vectors and malformed-input tests.
+- [x] Version-one protocol specification.
+- [x] Matching C and C# codecs.
+- [x] Shared test vectors and malformed-input tests.
+
+The software implementation completed on 2026-09-02. Protocol 1.0 uses one fixed 20-byte frame over USB and Bluetooth. Eleven shared `.bytes` fixtures pass both
+the portable C codec and C# codec; malformed and out-of-bound variants are rejected. The firmware implements fresh layout-bound, single-transport sessions but
+advertises zero layer capabilities in Step 9, so protocol traffic has no path to mutate ZMK state. A genuine network-disabled build produced the matched
+`Output/Step9/ShinyGo60-20260902-032254-11804322` artifact set. The full contract and verification evidence are recorded in
+[Custom Firmware/BuildSupport/STEP9_PROTOCOL_V1.md](Custom%20Firmware/BuildSupport/STEP9_PROTOCOL_V1.md).
 
 Done when:
 
-- C and C# encode and decode the same golden messages.
-- Invalid protocol traffic cannot change layer state or disrupt normal HID typing.
-- Compatibility and version-rejection behavior are deterministic.
+- [x] C and C# encode and decode the same golden messages.
+- [x] Invalid protocol traffic has no firmware path that can change layer state.
+- [x] Compatibility and version-rejection behavior are deterministic.
+- [x] The Step 9 UF2 passes normal HID and TRRS checks on the physical keyboard.
+- [x] The manifest-bound protocol-v1 client completes five fresh USB sessions.
+- [x] The client completes Bluetooth and USB-to-Bluetooth-to-USB transport-switch smoke tests.
+
+Physical acceptance completed on 2026-09-02. The final UF2 retained normal keyboard and TRRS behavior, five dedicated USB and five dedicated Bluetooth protocol-v1
+handshakes passed, and a subsequent USB-to-Bluetooth-to-USB run passed all 15 exchanges with fresh layout-bound sessions. This completes Step 9 without enabling
+layer mutation. The broader gate G3 security, reconnection, loss, and soak matrix remains pending.
 
 Depends on: Step 6.
 
@@ -381,15 +394,15 @@ Goal: make the companion converge on the keyboard's true layer state without pol
 
 Work:
 
-- [ ] Observe effective ZMK layer changes on the central.
-- [ ] Send a state snapshot after every successful handshake.
-- [ ] Send an event only when the effective layer changes.
-- [ ] Include the state revision needed to identify stale or missed updates.
-- [ ] Validate the firmware layout identifier against the loaded manifest.
-- [ ] Resolve numeric layer IDs to names in C#.
-- [ ] Test `&mo`, `&to`, `&tog`, conditional layers, transparent bindings, and right-half-triggered changes.
-- [ ] Test reconnects and transport switches while layers are active.
-- [ ] Verify feature parity over USB and Bluetooth.
+- [x] Observe effective ZMK layer changes on the central.
+- [x] Send a state snapshot after every successful handshake.
+- [x] Send an event only when the effective layer changes.
+- [x] Include the state revision needed to identify stale or missed updates.
+- [x] Validate the firmware layout identifier against the loaded manifest.
+- [x] Resolve numeric layer IDs to names in C#.
+- [x] Test `&mo`, `&to`, `&tog`, transparent bindings, and right-half-triggered changes; conditional layers are absent from the input keymap.
+- [x] Test reconnects and transport switches while layers are active.
+- [x] Verify feature parity over USB and Bluetooth.
 
 Deliverables:
 
@@ -401,6 +414,16 @@ Done when:
 
 - The C# state always converges to the firmware's effective layer after connect, change, sleep, reconnect, and transport switch.
 - A missing or mismatched manifest prevents control and is reported clearly.
+
+The software implementation and matched firmware build completed on 2026-09-02. The firmware advertises only state telemetry, sends the initial snapshot in
+response to the protocol-required post-`Hello` `GetState`, and coalesces busy-transport events to the latest full state. The C# tracker resolves the 22 manifest
+layers and its simulated snapshot, gap, stale, reconnect, session-switch, and invalid-layer cases pass. The flashed build retains normal USB HID and TRRS operation;
+five fresh snapshots and live layer-event runs pass over both USB and Bluetooth, including USB convergence after a coalesced revision. Two new Bluetooth sessions
+also converged from snapshots while Keypad remained active. A Bluetooth-to-USB-to-Bluetooth-to-USB sequence retained that same active state in every new session,
+then reported the return to Home. Normal wireless-split input, a right-half-triggered `RightIndex` transition, and transparent-key behavior also pass. The exported
+keymap has no conditional layer to test. Fresh USB and Bluetooth snapshots also converged after Windows sleep/resume. This completes Step 10; full measurements
+and physical evidence are recorded in
+[Custom Firmware/BuildSupport/STEP10_LAYER_TELEMETRY.md](Custom%20Firmware/BuildSupport/STEP10_LAYER_TELEMETRY.md).
 
 Depends on: Steps 7 and 9.
 

@@ -2,6 +2,8 @@ namespace ShinyGo60.Protocol.Transport;
 
 public interface IKeyboardTransport : IAsyncDisposable
 {
+    event EventHandler<KeyboardPacketReceivedEventArgs>? PacketReceived;
+
     TransportKind Kind { get; }
 
     bool IsConnected { get; }

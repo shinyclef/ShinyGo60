@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define SHINYGO60_FEATURE_VERSION "0.3.0-step8"
+#define SHINYGO60_FEATURE_VERSION "0.5.0-step10"
 
 struct shinygo60_diagnostic {
     const char *feature_version;

@@ -22,6 +22,7 @@ maintainer workflow with a documented 10 GB free-space requirement. The release'
 | Validated local image | `shinygo60-builder:v25.11` |
 | Initial Step 3 local image ID | `sha256:8c05b8af27498f7f42391fa408dfd841fbebfdc70f0d7766a280edd03db98720` |
 | Step 8 reconstruction image ID | `sha256:efc1cd8775ef49246130c2841cc06638f3e243caffd29c3d587292423706bb41` |
+| Step 9 reconstruction image ID | `sha256:71f0923c8cbc49c18bcf5f8d168e24f9e0cc0cee087d61e8213242a4ec6d09b6` |
 | ARM cross-compiler | Arm GNU Toolchain `12.3.Rel1`, `arm-none-eabi-gcc 12.3.1` |
 
 The local image IDs are construction evidence, not substitutes for a registry digest. BuildKit export metadata changed the local ID between otherwise equivalent

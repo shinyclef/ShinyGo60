@@ -36,6 +36,8 @@ The image is pinned to:
 - MoErgo ZMK tag `v25.11` and commit `11454d23596afbdb06380a1125371b19ab65675c`;
 - initial Step 3 local image ID `sha256:8c05b8af27498f7f42391fa408dfd841fbebfdc70f0d7766a280edd03db98720`;
 - Step 8 reconstruction image ID `sha256:efc1cd8775ef49246130c2841cc06638f3e243caffd29c3d587292423706bb41`.
+- Step 9 reconstruction image ID `sha256:71f0923c8cbc49c18bcf5f8d168e24f9e0cc0cee087d61e8213242a4ec6d09b6`.
+- Step 10 reconstruction image ID `sha256:dc4e878897c99fd48172dbb5ff32ee85f38649214d92e27a328aae7b8cbeac9a`.
 
 Local image IDs are evidence for their exact constructions. They can vary with BuildKit export metadata even when the pinned base, Dockerfile, build context, and
 ZMK source are unchanged. The C# pipeline therefore validates and logs the managed role, ZMK tag, exact source commit, and current local ID. A registry digest must

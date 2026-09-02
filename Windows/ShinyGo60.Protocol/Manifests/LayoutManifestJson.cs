@@ -55,8 +55,9 @@ public static partial class LayoutManifestJson
         return Deserialize(utf8Json);
     }
 
-    private static void Validate(LayoutManifest manifest)
+    public static void Validate(LayoutManifest manifest)
     {
+        ArgumentNullException.ThrowIfNull(manifest);
         if (manifest.SchemaVersion != LayoutManifest.CurrentSchemaVersion)
         {
             throw new InvalidDataException(

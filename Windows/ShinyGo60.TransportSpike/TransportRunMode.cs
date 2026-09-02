@@ -6,4 +6,6 @@ internal enum TransportRunMode
     Bluetooth,
     Both,
     Switch,
+    WatchUsb,
+    WatchBluetooth,
 }

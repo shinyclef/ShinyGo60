@@ -14,6 +14,11 @@ internal sealed class UsbSerialKeyboardTransport : IKeyboardTransport
     private SerialDevice? device;
     private DataReader? reader;
     private DataWriter? writer;
+    private CancellationTokenSource? readCancellation;
+    private Task? readTask;
+    private TaskCompletionSource<ReadOnlyMemory<byte>>? pendingResponse;
+
+    public event EventHandler<KeyboardPacketReceivedEventArgs>? PacketReceived;
 
     public TransportKind Kind => TransportKind.Usb;
 
@@ -59,6 +64,8 @@ internal sealed class UsbSerialKeyboardTransport : IKeyboardTransport
         this.device = openedDevice;
         this.reader = new DataReader(openedDevice.InputStream) { InputStreamOptions = InputStreamOptions.Partial };
         this.writer = new DataWriter(openedDevice.OutputStream);
+        this.readCancellation = new CancellationTokenSource();
+        this.readTask = this.ReadPacketsAsync(this.reader, this.readCancellation.Token);
         this.DeviceName = candidate.Name;
     }
 
@@ -71,39 +78,46 @@ internal sealed class UsbSerialKeyboardTransport : IKeyboardTransport
             throw new InvalidOperationException("The USB transport is disconnected.");
         }
 
-        if (request.Length != HelloMessageCodec.PacketSize)
+        if (request.Length != ProtocolPacketCodec.PacketSize)
         {
-            throw new ArgumentException($"A Hello packet must be {HelloMessageCodec.PacketSize} bytes.", nameof(request));
+            throw new ArgumentException($"A protocol packet must be {ProtocolPacketCodec.PacketSize} bytes.", nameof(request));
         }
 
-        this.writer.WriteBytes(request.ToArray());
-        await this.writer.StoreAsync().AsTask(cancellationToken).ConfigureAwait(false);
-
-        byte[] response = new byte[HelloMessageCodec.PacketSize];
-        int responseLength = 0;
-        while (responseLength < response.Length)
+        TaskCompletionSource<ReadOnlyMemory<byte>> responseSource = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (Interlocked.CompareExchange(ref this.pendingResponse, responseSource, null) is not null)
         {
-            uint loaded = await this.reader.LoadAsync((uint)(response.Length - responseLength))
-                .AsTask(cancellationToken)
-                .ConfigureAwait(false);
-            if (loaded == 0)
-            {
-                throw new EndOfStreamException("The Go60 USB CDC endpoint closed before returning a complete response.");
-            }
-
-            int readLength = Math.Min(checked((int)loaded), response.Length - responseLength);
-            byte[] chunk = new byte[readLength];
-            this.reader.ReadBytes(chunk);
-            chunk.CopyTo(response, responseLength);
-            responseLength += readLength;
+            throw new InvalidOperationException("A USB exchange is already in progress.");
         }
 
-        return response;
+        try
+        {
+            this.writer.WriteBytes(request.ToArray());
+            await this.writer.StoreAsync().AsTask(cancellationToken).ConfigureAwait(false);
+            return await responseSource.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref this.pendingResponse, null, responseSource);
+        }
     }
 
-    public ValueTask DisconnectAsync(CancellationToken cancellationToken = default)
+    public async ValueTask DisconnectAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        TaskCompletionSource<ReadOnlyMemory<byte>>? responseSource = Interlocked.Exchange(ref this.pendingResponse, null);
+        responseSource?.TrySetException(new IOException("The USB transport disconnected."));
+
+        CancellationTokenSource? activeReadCancellation = this.readCancellation;
+        this.readCancellation = null;
+        Task? activeReadTask = this.readTask;
+        this.readTask = null;
+        activeReadCancellation?.Cancel();
+        if (activeReadTask is not null)
+        {
+            await activeReadTask.ConfigureAwait(false);
+        }
+        activeReadCancellation?.Dispose();
 
         this.writer?.Dispose();
         this.writer = null;
@@ -112,11 +126,64 @@ internal sealed class UsbSerialKeyboardTransport : IKeyboardTransport
         this.device?.Dispose();
         this.device = null;
         this.DeviceName = null;
-        return ValueTask.CompletedTask;
     }
 
     public ValueTask DisposeAsync()
     {
         return this.DisconnectAsync();
+    }
+
+    private async Task ReadPacketsAsync(DataReader activeReader, CancellationToken cancellationToken)
+    {
+        byte[] packet = new byte[ProtocolPacketCodec.PacketSize];
+        int packetLength = 0;
+
+        try
+        {
+            while (true)
+            {
+                uint loaded = await activeReader
+                    .LoadAsync((uint)(packet.Length - packetLength))
+                    .AsTask(cancellationToken)
+                    .ConfigureAwait(false);
+                if (loaded == 0)
+                {
+                    throw new EndOfStreamException("The Go60 USB CDC endpoint closed while receiving protocol data.");
+                }
+
+                int readLength = Math.Min(checked((int)loaded), packet.Length - packetLength);
+                byte[] chunk = new byte[readLength];
+                activeReader.ReadBytes(chunk);
+                chunk.CopyTo(packet, packetLength);
+                packetLength += readLength;
+
+                if (packetLength == packet.Length)
+                {
+                    this.DispatchPacket(packet);
+                    packet = new byte[ProtocolPacketCodec.PacketSize];
+                    packetLength = 0;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            TaskCompletionSource<ReadOnlyMemory<byte>>? responseSource = Interlocked.Exchange(ref this.pendingResponse, null);
+            responseSource?.TrySetException(exception);
+        }
+    }
+
+    private void DispatchPacket(ReadOnlyMemory<byte> packet)
+    {
+        if (ProtocolPacketCodec.TryReadHeader(packet.Span, out _, out ProtocolMessageType type) &&
+            type == ProtocolMessageType.LayerChanged)
+        {
+            this.PacketReceived?.Invoke(this, new KeyboardPacketReceivedEventArgs(packet));
+            return;
+        }
+
+        this.pendingResponse?.TrySetResult(packet);
     }
 }

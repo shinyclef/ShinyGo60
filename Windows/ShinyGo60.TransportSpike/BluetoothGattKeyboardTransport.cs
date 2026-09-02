@@ -17,6 +17,8 @@ internal sealed class BluetoothGattKeyboardTransport : IKeyboardTransport
     private GattCharacteristic? characteristic;
     private TaskCompletionSource<ReadOnlyMemory<byte>>? pendingResponse;
 
+    public event EventHandler<KeyboardPacketReceivedEventArgs>? PacketReceived;
+
     public TransportKind Kind => TransportKind.Bluetooth;
 
     public bool IsConnected => this.device is not null && this.characteristic is not null;
@@ -137,9 +139,9 @@ internal sealed class BluetoothGattKeyboardTransport : IKeyboardTransport
             throw new InvalidOperationException("The Bluetooth transport is disconnected.");
         }
 
-        if (request.Length != HelloMessageCodec.PacketSize)
+        if (request.Length != ProtocolPacketCodec.PacketSize)
         {
-            throw new ArgumentException($"A Hello packet must be {HelloMessageCodec.PacketSize} bytes.", nameof(request));
+            throw new ArgumentException($"A protocol packet must be {ProtocolPacketCodec.PacketSize} bytes.", nameof(request));
         }
 
         TaskCompletionSource<ReadOnlyMemory<byte>> responseSource = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -219,6 +221,18 @@ internal sealed class BluetoothGattKeyboardTransport : IKeyboardTransport
         using DataReader reader = DataReader.FromBuffer(args.CharacteristicValue);
         byte[] value = new byte[reader.UnconsumedBufferLength];
         reader.ReadBytes(value);
-        this.pendingResponse?.TrySetResult(value);
+        this.DispatchPacket(value);
+    }
+
+    private void DispatchPacket(ReadOnlyMemory<byte> packet)
+    {
+        if (ProtocolPacketCodec.TryReadHeader(packet.Span, out _, out ProtocolMessageType type) &&
+            type == ProtocolMessageType.LayerChanged)
+        {
+            this.PacketReceived?.Invoke(this, new KeyboardPacketReceivedEventArgs(packet));
+            return;
+        }
+
+        this.pendingResponse?.TrySetResult(packet);
     }
 }

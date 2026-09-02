@@ -11,7 +11,7 @@ internal static class KeymapInspectionTests
 {
     private const string FirmwareRevision = "11454d23596afbdb06380a1125371b19ab65675c";
 
-    private static readonly ProtocolVersion ProtocolVersion = new(0, 1);
+    private static readonly ProtocolVersion ProtocolVersion = ShinyGo60.Protocol.ProtocolVersion.Current;
 
     private static readonly string[] ExpectedCurrentLayers =
     [
@@ -128,7 +128,7 @@ internal static class KeymapInspectionTests
             !string.Equals(firstIdentifier, reorderedIdentifier, StringComparison.Ordinal),
             "Reordering layers should change the layout identifier.");
 
-        string nextProtocolIdentifier = LayoutIdentity.Create(new ProtocolVersion(0, 2), first.SourceBytes.Span);
+        string nextProtocolIdentifier = LayoutIdentity.Create(new ProtocolVersion(1, 1), first.SourceBytes.Span);
         AssertEx.True(
             !string.Equals(firstIdentifier, nextProtocolIdentifier, StringComparison.Ordinal),
             "Changing the protocol version should change the layout identifier.");

@@ -4,6 +4,8 @@ namespace ShinyGo60.Tests.Fakes;
 
 internal sealed class FakeKeyboardTransport : IKeyboardTransport
 {
+    public event EventHandler<KeyboardPacketReceivedEventArgs>? PacketReceived;
+
     public TransportKind Kind { get; init; } = TransportKind.Usb;
 
     public bool IsConnected { get; private set; }
@@ -37,5 +39,10 @@ internal sealed class FakeKeyboardTransport : IKeyboardTransport
     {
         this.IsConnected = false;
         return ValueTask.CompletedTask;
+    }
+
+    public void RaisePacket(ReadOnlyMemory<byte> packet)
+    {
+        this.PacketReceived?.Invoke(this, new KeyboardPacketReceivedEventArgs(packet));
     }
 }

@@ -11,5 +11,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Fixtures\Keymaps\*.keymap" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\Custom Firmware\Module\tests\protocol\vectors\*.bytes"
+          Link="Fixtures\Protocol\Vectors\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

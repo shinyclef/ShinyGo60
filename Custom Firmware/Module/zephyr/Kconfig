@@ -12,23 +12,23 @@ config SHINYGO60_CENTRAL
       right/peripheral image shares the configuration but compiles no runtime
       source from this module.
 
-config SHINYGO60_TRANSPORT_SPIKE
+config SHINYGO60_PROTOCOL
     bool
     default y if SHINYGO60_CENTRAL
     depends on SHINYGO60_CENTRAL
     select RING_BUFFER
     help
-      Add the provisional Step 6 Hello transport over USB CDC and encrypted
-      Bluetooth GATT on the Go60 central.
+      Add the bounded ShinyGo60 protocol over USB CDC and encrypted Bluetooth
+      GATT on the Go60 central.
 
 config SHINYGO60_LAYOUT_IDENTIFIER
     string "Generated ShinyGo60 layout identifier"
-    default "00000000-0000-0000-0000-000000000005"
+    default "sg60-v1-00000000000000010000000000000000"
     depends on SHINYGO60
     help
       Layout identifier generated from the exact keymap and protocol version.
-      The default retains the Step 6 diagnostic identity for manual builds;
-      the headless builder supplies the matched production value.
+      The default is a non-production identity for manual builds; the headless
+      builder supplies the matched production value.
 
 config SHINYGO60_KEYMAP_SHA256
     string "Generated ShinyGo60 keymap SHA-256"

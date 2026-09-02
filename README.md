@@ -190,9 +190,11 @@ source; `Custom Firmware/Generated`, `Output`, `bin`, and `obj` are disposable a
 
 ## Current status
 
-The project has completed its headless keymap-to-UF2 pipeline alongside the corrected Step 6 dual-transport firmware. Firmware v0.2.1 has
-passed its TRRS, USB, Bluetooth, and transport-switching hardware checks; the remaining security/reconnection matrix still requires validation. The repository
-currently contains:
+The project has completed the protocol-v1 implementation, headless keymap-to-UF2 pipeline, and Step 10 telemetry software. The Step 9 UF2 passes its flash, normal
+HID, TRRS, dedicated USB, dedicated Bluetooth, and USB-to-Bluetooth-to-USB handshake checks. The Step 10 UF2 retains normal USB HID and TRRS operation, and its
+manifest-bound snapshots and live effective-layer telemetry pass over both USB and Bluetooth, including USB convergence after a coalesced update. Active-layer
+reconnect, Bluetooth-to-USB-to-Bluetooth-to-USB convergence, wireless-split input, right-half layer activation, transparent-key behavior, and post-sleep sessions
+also pass. The input keymap has no conditional layer. The repository currently contains:
 
 - The active MoErgo-exported `.keymap` for the first build fixture.
 - A MoErgo Layout Editor JSON snapshot, retained as a reference rather than a version-one build input.
@@ -201,11 +203,13 @@ currently contains:
 - A pinned, byte-reproducible v25.11 baseline build and its recorded build evidence.
 - A pinned, single-revision Go60 firmware image definition, offline build scripts, and scoped cleanup.
 - A .NET 10 C# solution with shared protocol and diagnostic libraries, headless builder and companion cores, WPF application shells, offline scaffold tests, and a
-  provisional USB/Bluetooth diagnostic client.
+  layout-aware USB/Bluetooth diagnostic client.
 - A strict Go60 keymap inspector, deterministic layout identity, shared manifest reader/writer, and matching generated firmware header.
 - A command-line build tool with clean workspaces, pinned Docker metadata verification, structural and identity-aware UF2 validation, atomic matched outputs, and
   cancellation cleanup.
 - An out-of-tree ZMK module with central-only USB CDC/ACM and bonded, encrypted Bluetooth GATT transports included through the supported MoErgo build hook.
+- Matching native C and C# protocol-v1 codecs driven by the same eleven golden byte vectors.
+- A read-only central layer observer and C# state tracker that validates the matching manifest, converges across revision gaps, and resolves IDs to layer names.
 
 The baseline UF2 has passed reproducible build, structural validation, and an initial hardware flash test. Its exact pins, hashes, measurements, and remaining
 regression checklist are recorded in [Custom Firmware/BuildSupport/BASELINE_V25_11.md](Custom%20Firmware/BuildSupport/BASELINE_V25_11.md).
@@ -237,6 +241,19 @@ as one complete output set. Its offline orchestration suite and two genuine netw
 identical 937,984-byte UF2s from the current keymap, all disposable workspaces were removed, and only the 4.46 GB build image remains after scoped cache cleanup.
 Evidence and measurements are recorded in
 [Custom Firmware/BuildSupport/STEP8_HEADLESS_PIPELINE.md](Custom%20Firmware/BuildSupport/STEP8_HEADLESS_PIPELINE.md).
+
+Step 9 replaces the provisional echo packet with a fixed 20-byte protocol shared unchanged by USB CDC and encrypted Bluetooth GATT. It defines layout-bound
+single-owner sessions, snapshots and layer events, persistent commands, five-second-maximum leased momentary commands, results, errors, and deterministic stale or
+duplicate handling. Both codecs pass the same shared fixtures, and the complete firmware builds offline. The current Step 9 firmware deliberately advertises no
+layer capabilities, so it can validate the protocol without changing keyboard state. Evidence and the complete byte contract are recorded in
+[Custom Firmware/BuildSupport/STEP9_PROTOCOL_V1.md](Custom%20Firmware/BuildSupport/STEP9_PROTOCOL_V1.md).
+
+Step 10 enables only effective-layer telemetry. The central returns a revisioned snapshot after the negotiated session's `GetState` and sends full-state events only
+when the effective ZMK layer changes. USB and Bluetooth can now deliver unsolicited packets to a manifest-backed C# tracker; persistent and momentary commands
+remain disabled. The software checks and pinned offline firmware build pass. Physical USB and Bluetooth snapshot and live-event checks, active-layer reconnect,
+transport switching, normal HID, TRRS and wireless inter-half operation, transparent-key behavior, and sleep/resume convergence all pass. Step 10 is complete;
+evidence and the checklist are recorded in
+[Custom Firmware/BuildSupport/STEP10_LAYER_TELEMETRY.md](Custom%20Firmware/BuildSupport/STEP10_LAYER_TELEMETRY.md).
 
 The graphical one-click wrapper and production companion behavior have not yet been implemented. Step 4 scaffold evidence is recorded in
 [Custom Firmware/BuildSupport/STEP4_SCAFFOLD.md](Custom%20Firmware/BuildSupport/STEP4_SCAFFOLD.md).
