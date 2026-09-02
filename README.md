@@ -1,323 +1,221 @@
 # ShinyGo60
 
-Custom firmware tooling and Windows 11 integration for the [MoErgo Go60](https://www.moergo.com/).
+ShinyGo60 adds Windows 11 integration to the [MoErgo Go60](https://www.moergo.com/): mouse-driven layer controls, live layer and battery telemetry, and a compact taskbar widget.
 
-The project extends layouts created with the MoErgo Layout Editor with mouse-driven layer controls, keyboard status reporting, and an at-a-glance Windows widget. The editor remains the source of truth for key mappings and ordinary ZMK behaviors.
+Layouts remain owned by the MoErgo Layout Editor. ShinyGo60 takes an exported ZMK `.keymap`, adds its communication module, and produces a matched firmware image and Windows manifest. Mouse buttons work through ordinary configurable keyboard shortcuts, so no Logitech-specific software or API is required.
 
-## Version-one contract
+> [!WARNING]
+> ShinyGo60 is a development preview for experienced Go60 and ZMK users. It modifies keyboard firmware, has no packaged installer, and still has outstanding physical acceptance checks. Keep a known-good Go60 firmware image and a spare keyboard available before flashing.
 
-- Support Windows 11.
-- Accept a MoErgo-exported ZMK `.keymap` as the only firmware input.
-- Implement the builder, companion, configuration, and widget in C#.
-- Implement the keyboard integration as native ZMK/Zephyr firmware code.
-- Provide the full command and telemetry feature set over both USB and Bluetooth.
-- Produce one customized UF2 that is manually flashed to both Go60 halves.
-- Receive mouse controls as configurable Windows shortcuts without using a Logitech-specific API.
-- Include battery reporting only if reliable, separate readings from both halves pass the feasibility gate.
-- Preserve normal keyboard operation when the Windows companion is not running.
+ShinyGo60 is an independent community project and is not affiliated with or endorsed by MoErgo.
 
-## Project goals
+## Features
 
-### 1. Control Go60 layers from a mouse
+- Activate a layer while a configured shortcut is held.
+- Select a persistent layer with a configured shortcut.
+- Report the effective ZMK layer over USB or encrypted, bonded Bluetooth Low Energy.
+- Report separate left- and right-half battery state, including stale or unavailable readings.
+- Display the current layer, connection, transport, and battery state in a focusless Windows 11 taskbar widget.
+- Prefer USB, Bluetooth, or automatic transport selection.
+- Preserve normal keyboard behavior when the Windows companion is not running.
+- Build a validated UF2 and matching layout manifest reproducibly from one exported `.keymap`.
 
-Use a button on a Logitech G502 X Plus as a Go60 layer switch. The mouse button can be configured to emit an uncommon shortcut such as `Ctrl+Alt+Shift+F13`, which the Windows companion translates into a command for the keyboard.
+## Project status
 
-Each shortcut can be assigned one of two actions:
+The protocol 1.1 firmware, command-line build pipeline, USB/Bluetooth transport, layer control, per-half battery telemetry, Windows companion, configuration UI, and taskbar widget are implemented. Completed automated and hardware checks are recorded in the linked acceptance reports.
 
-- **Momentary layer:** activate the target layer when the shortcut is pressed and release that external activation when the shortcut is released. The target remains active only while the mouse button is held.
-- **Go to layer:** select the target layer when the shortcut is pressed and leave it active until another Go to layer command or a physical keyboard `&to`
-  action replaces it.
+This repository is currently a **source release**, not a general end-user release:
 
-The shortcut and target layer will be configurable rather than tied to a particular mouse button or function key. Using a normal keyboard shortcut also avoids requiring direct integration with Logitech software or a mouse-specific API.
+| Component | Status |
+| --- | --- |
+| Command-line keymap-to-UF2 builder | Working and hardware-tested |
+| Firmware protocol and USB/Bluetooth transports | Working and hardware-tested |
+| Windows companion and shortcut editor | Working and hardware-tested |
+| Taskbar widget | Implemented; final fullscreen and Explorer-lifecycle checks are in progress |
+| Graphical firmware builder | Placeholder only; use the command-line builder |
+| Installer and prebuilt firmware-build image | Not yet published |
 
-### 2. Send Go60 status to Windows
+See [Known limitations](#known-limitations) before building or flashing.
 
-The custom firmware should report the current effective ZMK layer and layer changes as they happen.
+## How it works
 
-The project will also investigate whether the firmware can reliably report the battery level of the left and right halves independently. Battery support has an explicit feasibility gate: if the firmware cannot supply both values reliably, battery status will be removed from the project scope and will not be included in the Windows companion or widget.
-
-### 3. Show status in a small Windows widget
-
-Create a compact widget that lives at the bottom-left of the Windows taskbar area. It should show the active layer name and, only if the battery feasibility gate passes, separate battery levels for the left and right keyboard halves.
-
-The widget is an unobtrusive WPF window parented to the Windows 11 taskbar and positioned at its far left. Because the taskbar owns the child window, fullscreen
-visibility and z-order follow Explorer immediately without a topmost overlay or fullscreen polling. A low-frequency maintenance check reattaches the widget if
-Explorer replaces the taskbar window.
-
-## Intended workflow
-
-The firmware build path is:
+The firmware build keeps the Layout Editor as the source of truth:
 
 ```text
 MoErgo Layout Editor
         |
         | export .keymap
         v
-ShinyGo60 transformation/build tool
+ShinyGo60 build tool
         |
-        | add communication support and build
+        | add the module and build
         v
-Customized .uf2 firmware
+Matched UF2 + layout manifest
         |
         v
-MoErgo Go60
+Both Go60 halves
 ```
 
-At runtime, the Windows companion connects the mouse controls, keyboard, and widget:
+At runtime, the Windows companion joins shortcuts, keyboard commands, and telemetry:
 
 ```text
-G502 X Plus ---- shortcut key-down/key-up ----> Windows companion ==== USB or Bluetooth ====> Go60
-                                                       ^                                      |
-                                                       |=========== layer telemetry ===========|
-                                                       |
-                                                       +----> Bottom-left taskbar widget
+Mouse shortcut ----> Windows companion ==== USB or Bluetooth ====> Go60
+                            ^                                      |
+                            |========== layer and battery ==========|
+                            |
+                            +----> taskbar widget
 ```
 
-A key combination emitted by the mouse is delivered to Windows; it is not sent directly from the mouse to the keyboard. The Windows companion detects the shortcut, applies the configured action, and sends the corresponding command to the Go60.
+The protocol binds the firmware and companion to the same deterministic layout identifier. A manifest from a different keymap is rejected rather than allowing a shortcut to target the wrong layer.
 
-1. Create and maintain the keymap in the MoErgo Layout Editor.
-2. Export the layout in ZMK `.keymap` format.
-3. Pass the export to the ShinyGo60 tool.
-4. Add the communication functionality while preserving the exported layout and custom behaviors.
-5. Build one customized UF2 and manually flash it to both Go60 halves.
-6. Run the Windows companion to receive keyboard status, display the widget, and handle mouse shortcuts.
+## Requirements
 
-Generated firmware files should not need to be edited by hand. Updating a layout should be a repeatable export, transform, build, and flash process.
+- A MoErgo Go60. Other ZMK keyboards are not supported.
+- Windows 11 for the companion application.
+- A Go60 `.keymap` exported from the [MoErgo Layout Editor](https://docs.moergo.com/layout-editor-guide/advanced-usage-export-import/). JSON layout backups are not accepted as build input.
+- The [.NET 10 SDK](https://learn.microsoft.com/en-us/dotnet/core/install/windows). `global.json` requests SDK `10.0.203` and permits later 10.0 patch releases.
+- [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/) with Linux containers and Buildx.
+- PowerShell and approximately 10 GB of free disk space while constructing the pinned firmware image. The retained image is approximately 4.46 GB.
+- Internet access for the initial .NET restore, NuGet vulnerability-index refreshes, and Docker image construction. Normal firmware builds run with container networking disabled.
 
-## Input formats
+## Quick start
 
-| Format | Intended use |
-| --- | --- |
-| ZMK `.keymap` | The only version-one build input. |
-| `.uf2` | Flashable build output or reference artifact. A compiled UF2 is not intended to be patched as an input. |
+Run all commands in PowerShell from the repository root.
 
-Existing MoErgo JSON exports may remain in the repository as layout snapshots, but the version-one builder will not accept or convert them.
+### 1. Build the pinned firmware environment
 
-## Communication model
+Start Docker Desktop, then construct the local `shinygo60-builder:v25.11` image:
 
-Communication is bidirectional.
+```powershell
+& '.\Custom Firmware\BuildSupport\Docker-v25.11\Build-Image.ps1'
+```
 
-### Go60 to Windows
+This fetches pinned inputs and may take some time on its first run. The image contains MoErgo ZMK v25.11 at the revision recorded in the [firmware-builder documentation](Custom%20Firmware/BuildSupport/Docker-v25.11/README.md).
 
-When the effective layer changes, the firmware sends its numeric layer ID to the Windows companion. The companion resolves the ID against the manifest generated from the same layout, allowing the widget to display a name such as `Navigation`, `Keypad`, or `Gaming`.
+### 2. Build firmware from a keymap
 
-If per-half battery reporting passes its feasibility gate, battery updates will contain a separate value for each keyboard half. If it fails, battery messages and fields will not be part of the application protocol.
+Export a Go60 layout as a `.keymap`, then pass its path to the command-line builder:
 
-### Windows to Go60
+```powershell
+dotnet run --project '.\Windows\ShinyGo60.BuildTool\ShinyGo60.BuildTool.csproj' --configuration Release -- `
+    '.\path\to\layout.keymap'
+```
 
-The companion listens for configured shortcut events and sends the corresponding layer action to the firmware:
+The builder does not need a connected keyboard and never flashes one. A successful build prints the path to a new directory under `Output`. That directory contains one matched set:
 
 ```text
-Mouse button down -> shortcut down -> activate or select target layer
-Mouse button up   -> shortcut up   -> release momentary activation, if configured
+ShinyGo60-<timestamp>-<layout>/
+|-- ShinyGo60-<layout>.uf2
+|-- layout-manifest.json
+`-- build.log
 ```
 
-Releasing a momentary action should reveal the layer state that would otherwise be effective, including layer state produced by keys on the Go60 itself. A persistent “go to layer” action remains active until another action changes it.
+The builder validates the keymap, image metadata, both firmware segments, embedded layout identity, and complete UF2 structure before publishing the set. Failed or cancelled builds do not publish a successful UF2.
 
-### Initial protocol requirements
+### 3. Flash both Go60 halves
 
-The first version of the protocol should support:
+Flash the **same UF2 from the new matched output set** to both halves. Follow MoErgo's [official Go60 firmware-loading instructions](https://docs.moergo.com/go60-user-guide/customizing-key-layout/#loading-new-zmk-firmware-onto-your-go60), including its recommendation to keep a spare keyboard available.
 
-- Identifying its protocol version and matching layout manifest.
-- Reporting the current effective layer on connection.
-- Sending layer-change events.
-- Selecting a persistent layer by stable ID.
-- Pressing and releasing an externally controlled momentary layer.
-- Acknowledging commands with the resulting current state.
-- Rejecting malformed, unsupported, or mismatched-layout commands without disturbing normal keyboard input.
+Do not mix halves built from different keymaps or ShinyGo60 versions. Keep `layout-manifest.json` with the exact UF2 that produced it.
 
-Battery fields will be added only after reliable left- and right-half reporting has been demonstrated.
+### 4. Run the Windows companion
 
-The generated manifest and firmware should share a layout identifier so that reordered layers cannot silently cause Windows shortcuts to select the wrong layer.
+Create a local settings file, then set `$buildDirectory` to the output-set directory printed by the firmware build:
 
-The application protocol must work over both USB and Bluetooth while coexisting with normal keyboard input. The first feasibility implementation will evaluate USB CDC/ACM and an encrypted custom Bluetooth Low Energy GATT service, following the proven ZMK Studio transport pattern. Failure of the Bluetooth path blocks the version-one architecture rather than reducing it to a USB-only release.
+```powershell
+$settingsDirectory = Join-Path $env:LOCALAPPDATA 'ShinyGo60'
+New-Item -ItemType Directory -Force -Path $settingsDirectory | Out-Null
+$settingsPath = Join-Path $settingsDirectory 'companion-settings.json'
+Copy-Item '.\Windows\companion-settings.example.json' $settingsPath
+$buildDirectory = 'PATH_PRINTED_BY_THE_BUILD_COMMAND'
+```
 
-## Planned components
+Launch the companion with the matched manifest and settings:
 
-### Firmware transformation and build tool
+```powershell
+dotnet run --project '.\Windows\ShinyGo60.Companion\ShinyGo60.Companion.csproj' --configuration Release -- `
+    (Join-Path $buildDirectory 'layout-manifest.json') `
+    $settingsPath
+```
 
-- Accept a MoErgo-exported `.keymap`.
-- Preserve custom ZMK behaviors and configuration from the export.
-- Generate a versioned layer manifest for the Windows companion.
-- Add the custom ZMK integration needed for layer commands and status events.
-- Produce reproducible Go60 firmware builds.
-- Keep generated output separate from hand-maintained source files.
+The settings window can capture a shortcut, choose momentary or persistent layer behavior, select a target layer, choose a transport preference, and enable start-with-Windows behavior. Saving applies changes without restarting the application.
 
-### Go60 firmware integration
+For Bluetooth, pair the Go60 with Windows before starting the companion. Bluetooth commands require an encrypted connection and a stored firmware bond. Automatic transport selection prefers USB when both transports are available.
 
-- Observe and report effective ZMK layer changes.
-- Determine whether reliable per-half battery readings are available during the feasibility milestone.
-- Receive validated persistent and momentary layer commands.
-- Serve the same protocol over USB and encrypted Bluetooth Low Energy transports.
-- Make externally held layers cooperate with layers activated on the keyboard.
-- Avoid affecting typing latency or existing key behaviors.
-- Continue to function as a normal keyboard when the companion is not running.
+Companion diagnostics are written as JSON Lines under `%LOCALAPPDATA%\ShinyGo60\Logs`. They are designed not to contain keymap contents, raw protocol packets, pairing material, secrets, or stable device identifiers.
 
-### Windows companion
+## Shortcut actions
 
-- Run on Windows 11.
-- Connect to the customized Go60 firmware over USB or its existing Bluetooth connection.
-- Track the active layer and, if retained after the feasibility gate, both battery readings.
-- Detect configurable shortcut key-down and key-up events, including shortcuts sent by the G502 X Plus.
-- Map shortcuts to momentary or persistent layer actions.
-- Host and update the bottom-left status widget.
-- Start with Windows when enabled.
-- Reconnect cleanly after sleep, disconnects, or keyboard restarts.
+Each shortcut maps to one action:
 
-### Taskbar widget
+- **Momentary layer:** activates the target while the shortcut is held and releases that external activation when the shortcut is released. A short firmware lease prevents a lost key-up event or terminated companion from leaving the layer held indefinitely.
+- **Go to layer:** selects the target persistently until another persistent or physical layer action changes it.
 
-- Display the active layer as the primary value.
-- Display left- and right-half battery percentages only if battery support passes its feasibility gate.
-- Remain compact and avoid taking focus during normal use.
-- Show a clear disconnected or stale state for the keyboard connection.
-- Update promptly without polling more often than necessary.
+A mouse only needs to emit a keyboard shortcut that Windows can observe. The checked-in example uses `F23`, but shortcuts and target layers are configurable.
+
+## Build and test
+
+Exit any running ShinyGo60 companion instance before rebuilding; Windows locks the loaded application files. Then build the complete Windows solution:
+
+```powershell
+dotnet build '.\Windows\ShinyGo60.sln' --configuration Release --maxcpucount:1
+```
+
+Run the offline contract and integration checks:
+
+```powershell
+dotnet run --project '.\Windows\ShinyGo60.Tests\ShinyGo60.Tests.csproj' --configuration Release
+```
+
+The solution has no third-party NuGet dependencies. The first build may restore Microsoft's Windows SDK targeting pack; later builds can use the local package cache.
+
+See [Windows/README.md](Windows/README.md) for transport diagnostics and lower-level development commands.
+
+## Known limitations
+
+- There is no installer, signed binary release, or published prebuilt Docker image yet. The current workflow builds and runs from source.
+- The WPF graphical firmware builder is not functional; use `ShinyGo60.BuildTool`.
+- The taskbar widget targets the primary Windows 11 taskbar. Multi-monitor placement and nonstandard taskbar-edge policy are not part of the current acceptance scope.
+- Final taskbar-child checks for fullscreen transitions and Explorer replacement are still in progress. Taskbar parenting uses an established but unofficial Windows shell technique.
+- Windows sleep/resume has not completed physical acceptance.
+- USB-powered battery readings can saturate at 100%. The companion distinguishes current, stale, and unavailable values; battery accuracy was accepted for battery-powered Bluetooth use.
+- Firmware input is limited to a MoErgo-exported Go60 `.keymap` and the pinned v25.11 backend.
+- The most recent physical regression for returning from a companion-selected persistent layer through a keyboard `&to` binding remains pending.
+
+Detailed acceptance evidence and exact test scope are recorded in the [Step 14 Windows experience report](Custom%20Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md).
 
 ## Repository layout
 
-```text
-ShinyGo60/
-|-- Custom Firmware/       # Maintained ZMK module, build support, and ignored generated state
-|-- Input/                 # Runtime .keymap drop folder
-|-- Key Configuration/     # Current Layout Editor source exports
-|   `-- Previous/          # Older configuration snapshots
-|-- Windows/               # C# solution, WPF shells, shared contracts, and tests
-|-- .gitignore
-|-- DEVELOPMENT_PLAN.md
-|-- IMPLEMENTATION_PLAN.md
-|-- LICENSE
-`-- README.md
-```
+| Path | Contents |
+| --- | --- |
+| `Custom Firmware/Module` | Maintained ShinyGo60 ZMK module |
+| `Custom Firmware/BuildSupport` | Pinned firmware environment, templates, scripts, and acceptance records |
+| `Input` | Optional ignored drop folder for local `.keymap` files |
+| `Key Configuration` | Reference Layout Editor exports used during development |
+| `Windows` | C# solution, build tool, companion, shared protocol, diagnostics, and tests |
+| `Output` | Ignored generated UF2, manifest, and build-log sets |
 
-`Custom Firmware/BuildSupport/Docker-v25.11` contains the pinned firmware backend. `Custom Firmware/Module` and every directory under `Windows` are maintained
-source; `Custom Firmware/Generated`, `Output`, `bin`, and `obj` are disposable and ignored.
+Generated firmware workspaces, build output, binaries, and local settings are ignored. Do not commit generated UF2 files or diagnostic logs without reviewing them deliberately.
 
-## Current status
+## Documentation
 
-The project has completed the protocol-v1 implementation, headless keymap-to-UF2 pipeline, Step 10 layer telemetry, Step 11 per-half battery feasibility,
-Step 12 persistent and leased momentary layer control, and the Step 13 Windows companion core. Step 14 now includes the configuration UI, live shortcut editing,
-start-with-Windows behavior, and a focusless taskbar-child widget; its final physical layout and lifecycle acceptance checks are in progress.
-Step 14 design and acceptance evidence is recorded in
-[Custom Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md](Custom%20Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md).
-The Step 9 UF2 passes its flash, normal
-HID, TRRS, dedicated USB, dedicated Bluetooth, and USB-to-Bluetooth-to-USB handshake checks. The Step 10 UF2 retains normal USB HID and TRRS operation, and its
-manifest-bound snapshots and live effective-layer telemetry pass over both USB and Bluetooth, including USB convergence after a coalesced update. Active-layer
-reconnect, Bluetooth-to-USB-to-Bluetooth-to-USB convergence, wireless-split input, right-half layer activation, transparent-key behavior, and post-sleep sessions
-also pass. The input keymap has no conditional layer. Protocol 1.1 and the matched Step 11 UF2 report independent fresh, stale, or unavailable battery state for
-both halves without extra voltage samples. Battery-powered Bluetooth accuracy, wireless/TRRS split modes, USB transport, missing-half handling, reconnects, and
-active heartbeat behavior pass. USB-powered readings may stably saturate at 100% and Windows sleep/resume is explicitly deferred. The repository currently contains:
+- [Windows workspace and diagnostic commands](Windows/README.md)
+- [Firmware workspace](Custom%20Firmware/README.md)
+- [Firmware module](Custom%20Firmware/Module/README.md)
+- [Implementation plan](IMPLEMENTATION_PLAN.md)
+- [Development plan](DEVELOPMENT_PLAN.md)
+- [Protocol 1.1 design and golden vectors](Custom%20Firmware/BuildSupport/STEP9_PROTOCOL_V1.md)
+- [Headless firmware pipeline](Custom%20Firmware/BuildSupport/STEP8_HEADLESS_PIPELINE.md)
+- [Layer telemetry](Custom%20Firmware/BuildSupport/STEP10_LAYER_TELEMETRY.md)
+- [Battery feasibility results](Custom%20Firmware/BuildSupport/STEP11_BATTERY_FEASIBILITY.md)
+- [Layer-control safety and recovery](Custom%20Firmware/BuildSupport/STEP12_LAYER_CONTROL.md)
+- [Windows companion](Custom%20Firmware/BuildSupport/STEP13_HEADLESS_COMPANION.md)
+- [Windows UI and taskbar widget](Custom%20Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md)
 
-- The active MoErgo-exported `.keymap` for the first build fixture.
-- A MoErgo Layout Editor JSON snapshot, retained as a reference rather than a version-one build input.
-- A reference UF2 build, excluded from Git as generated firmware.
-- Previous configuration snapshots.
-- A pinned, byte-reproducible v25.11 baseline build and its recorded build evidence.
-- A pinned, single-revision Go60 firmware image definition, offline build scripts, and scoped cleanup.
-- A .NET 10 C# solution with shared protocol and diagnostic libraries, headless builder and companion cores, WPF application shells, offline scaffold tests, and a
-  layout-aware USB/Bluetooth diagnostic client.
-- A Windows 11 transport and global-shortcut layer plus a compact diagnostic companion that loads strict manifest-bound settings, selects one USB/Bluetooth
-  command owner, reconnects with bounded backoff, and writes structured JSON-lines logs.
-- A strict Go60 keymap inspector, deterministic layout identity, shared manifest reader/writer, and matching generated firmware header.
-- A command-line build tool with clean workspaces, pinned Docker metadata verification, structural and identity-aware UF2 validation, atomic matched outputs, and
-  cancellation cleanup.
-- An out-of-tree ZMK module with central-only USB CDC/ACM and bonded, encrypted Bluetooth GATT transports included through the supported MoErgo build hook.
-- Matching native C and C# protocol-v1.1 codecs driven by the same fourteen golden byte vectors.
-- A central layer ownership controller, battery observers, and manifest-bound C# trackers that converge across revision gaps, resolve layer IDs, and distinguish
-  fresh, stale, and unavailable per-half battery readings.
+## Contributing
 
-The baseline UF2 has passed reproducible build, structural validation, and an initial hardware flash test. Its exact pins, hashes, measurements, and remaining
-regression checklist are recorded in [Custom Firmware/BuildSupport/BASELINE_V25_11.md](Custom%20Firmware/BuildSupport/BASELINE_V25_11.md).
-
-The selected Docker backend retains a 4.46 GB image and builds the same UF2 offline in 14.857 seconds. The future C# builder will pull this prebuilt environment rather
-than constructing it locally. Measurements and cleanup details are recorded in
-[Custom Firmware/BuildSupport/STEP3_BUILD_ENVIRONMENT.md](Custom%20Firmware/BuildSupport/STEP3_BUILD_ENVIRONMENT.md).
-
-The first enabled module feature passed its hardware smoke test without changing key behavior. The right/peripheral UF2 remains byte-for-byte identical to that
-tested build. A brief state that initially appeared abnormal after the Step 5 flash resolved without intervention and has not been confirmed as a persistent
-firmware fault. Step 5 evidence is recorded in
-[Custom Firmware/BuildSupport/STEP5_MINIMAL_FEATURE.md](Custom%20Firmware/BuildSupport/STEP5_MINIMAL_FEATURE.md).
-
-Step 6 now provides the same fixed 16-byte diagnostic exchange over central-only USB CDC/ACM and a custom Bluetooth GATT service. BLE commands require both an
-encrypted link and a stored firmware bond. The matching Windows 11 C# client uses exact USB identifiers, paired-device GATT discovery, uncached service lookup, and
-round-trip validation. The initial v0.2.0 build passed USB and Bluetooth handshakes but broke TRRS by changing the physical UART API mode. Corrected v0.2.1 restores
-asynchronous UART0, retains USB CDC, and adds compile-time guards against recurrence. After flashing it, the user confirmed working TRRS and Bluetooth operation.
-Corrected-build USB and Bluetooth exchanges passed, followed by a successful USB-to-Bluetooth-to-USB run. Gate G3 remains pending on the remaining security and
-reconnection tests. Evidence and test commands are recorded in
-[Custom Firmware/BuildSupport/STEP6_DUAL_TRANSPORT.md](Custom%20Firmware/BuildSupport/STEP6_DUAL_TRANSPORT.md).
-
-Step 7 validates the exported Go60 structure without interpreting or rewriting its behaviors. It extracts the 22 ordered layers from the current keymap, hashes
-and copies the exact source bytes, generates a protocol-versioned layout ID, and writes matching JSON and firmware-header identities. Reordering layers changes the
-identifier, while spaces and Unicode paths are supported. Evidence is recorded in
-[Custom Firmware/BuildSupport/STEP7_KEYMAP_INSPECTION.md](Custom%20Firmware/BuildSupport/STEP7_KEYMAP_INSPECTION.md).
-
-Step 8's C# command-line tool carries those exact bytes and identities through a fresh pinned firmware workspace and publishes a UF2, manifest, and build log only
-as one complete output set. Its offline orchestration suite and two genuine network-disabled builds from the OneDrive project path pass. The repeat builds produced
-identical 937,984-byte UF2s from the current keymap, all disposable workspaces were removed, and only the 4.46 GB build image remains after scoped cache cleanup.
-Evidence and measurements are recorded in
-[Custom Firmware/BuildSupport/STEP8_HEADLESS_PIPELINE.md](Custom%20Firmware/BuildSupport/STEP8_HEADLESS_PIPELINE.md).
-
-Step 9 replaces the provisional echo packet with a fixed 20-byte protocol shared unchanged by USB CDC and encrypted Bluetooth GATT. It defines layout-bound
-single-owner sessions, snapshots and layer events, persistent commands, five-second-maximum leased momentary commands, results, errors, and deterministic stale or
-duplicate handling. Both codecs pass the same shared fixtures, and the complete firmware builds offline. The current Step 9 firmware deliberately advertises no
-layer capabilities, so it can validate the protocol without changing keyboard state. Evidence and the complete byte contract are recorded in
-[Custom Firmware/BuildSupport/STEP9_PROTOCOL_V1.md](Custom%20Firmware/BuildSupport/STEP9_PROTOCOL_V1.md).
-
-Step 10 enables only effective-layer telemetry. The central returns a revisioned snapshot after the negotiated session's `GetState` and sends full-state events only
-when the effective ZMK layer changes. USB and Bluetooth can now deliver unsolicited packets to a manifest-backed C# tracker; persistent and momentary commands
-remain disabled. The software checks and pinned offline firmware build pass. Physical USB and Bluetooth snapshot and live-event checks, active-layer reconnect,
-transport switching, normal HID, TRRS and wireless inter-half operation, transparent-key behavior, and sleep/resume convergence all pass. Step 10 is complete;
-evidence and the checklist are recorded in
-[Custom Firmware/BuildSupport/STEP10_LAYER_TELEMETRY.md](Custom%20Firmware/BuildSupport/STEP10_LAYER_TELEMETRY.md).
-
-Step 11 extends the fixed frame to protocol 1.1 with separate left/right battery snapshots and change events. Both halves re-publish ZMK's cached value once per
-active minute, wireless split explicitly refreshes the right Battery Service notification, and values become stale after 150 seconds of silence. It adds no
-sensor sampling. Software, pinned offline firmware, and the required physical Bluetooth/wireless/TRRS/USB/missing-half/reconnect checks pass, so battery support
-is retained for version one. Windows sleep/resume is deferred because the test PC does not sleep reliably. Evidence and the completed gate are recorded in
-[Custom Firmware/BuildSupport/STEP11_BATTERY_FEASIBILITY.md](Custom%20Firmware/BuildSupport/STEP11_BATTERY_FEASIBILITY.md).
-
-Step 12 composes keyboard-owned, runtime-persistent, and session-leased momentary layer state without replacing ordinary ZMK behavior. Commands now run over the
-same USB and encrypted Bluetooth protocol, use revision checks and strictly increasing IDs, and remove momentary ownership on release, lease expiry, session
-replacement, or transport loss. The C# command state machine and bounded transport diagnostic pass offline checks, and the matching firmware builds without
-network access. Physical control tests pass over USB and Bluetooth, including USB same-layer ownership in both release orders, multiple external owners, session
-and transport replacement, USB and Bluetooth loss, lease expiry, process termination, and a full keyboard reboot. The reboot cleared both a persistent Navigation
-selection and an active momentary Keypad hold, after which both halves typed normally over USB and TRRS. Windows sleep remains explicitly deferred because the
-test PC does not enter sleep reliably; the available recovery and state-safety matrix passes, so Step 12 is complete.
-The ownership truth table, recovery rules, artifact identity, and test commands are recorded in
-[Custom Firmware/BuildSupport/STEP12_LAYER_CONTROL.md](Custom%20Firmware/BuildSupport/STEP12_LAYER_CONTROL.md).
-
-Step 13 turns the protocol pieces into a long-running Windows 11 companion core. It discovers and validates the exact Go60 over USB or paired encrypted
-Bluetooth, owns only one command session, loads manifest-backed shortcut settings, captures global key-down/key-up events, suppresses OS repeat, renews a held
-momentary action, and reconnects with capped exponential backoff. The real G502 `F23` shortcut passed full momentary Navigation round trips over both transports;
-USB-to-Bluetooth switching and app-before-keyboard startup recovery also passed. A compact WPF diagnostic host exposes state and writes structured logs while
-remaining independent of the final widget. Windows sleep is still deferred on this PC. Evidence is recorded in
-[Custom Firmware/BuildSupport/STEP13_HEADLESS_COMPANION.md](Custom%20Firmware/BuildSupport/STEP13_HEADLESS_COMPANION.md).
-
-The graphical one-click builder has not yet been implemented. Step 4 scaffold evidence is recorded in
-[Custom Firmware/BuildSupport/STEP4_SCAFFOLD.md](Custom%20Firmware/BuildSupport/STEP4_SCAFFOLD.md).
-
-## Design principles
-
-- Keep the MoErgo Layout Editor workflow intact.
-- Treat the exported `.keymap` as input, not as manually maintained generated code.
-- Keep mouse shortcuts and their layer actions configurable.
-- Preserve normal keyboard behavior if Windows integration is unavailable.
-- Drop battery support completely if reliable telemetry from both halves cannot be demonstrated.
-- Keep the communication protocol small, versioned, and testable.
-- Avoid relying on reverse engineering or modifying compiled UF2 files.
-- Make builds reproducible so a layout update can be reprocessed without reapplying changes by hand.
-
-## Initial milestones
-
-1. Establish safe rollback and reproduce an unchanged, pinned Go60 firmware build.
-2. Measure and select a practical local build environment with an accepted disk footprint. **Complete.**
-3. Integrate a minimal firmware module and prove the same message round-trip over USB and encrypted Bluetooth Low Energy.
-4. Inspect a `.keymap` and generate a versioned layer manifest shared by firmware and Windows. **Complete.**
-5. Build the reliable headless keymap-to-UF2 pipeline and wrap it in a one-click C# builder.
-6. Report effective layer changes and decide the separate left/right battery feasibility gate.
-7. Add persistent and leased momentary layer commands with disconnect and crash safety.
-8. Build the Windows 11 companion with configurable shortcut key-down/key-up handling. **Complete.**
-9. Build and position the bottom-left taskbar widget.
-10. Harden reconnects, sleep/wake, transport switching, flashing, rollback, packaging, and clean-machine setup.
+Issues and focused pull requests are welcome. Keep maintained source separate from generated firmware state, preserve the exported keymap bytes, and run the Release build and offline checks before submitting a change. Hardware-dependent changes should state which USB, Bluetooth, split-keyboard, and recovery paths were physically tested.
 
 ## License
 
-ShinyGo60's original code is available under the [MIT License](LICENSE). ZMK, Zephyr, MoErgo, and other third-party components remain subject to their own licenses and notices.
+Original ShinyGo60 code is licensed under the [MIT License](LICENSE). ZMK, Zephyr, MoErgo sources, and other third-party components remain subject to their own licenses and notices.
