@@ -20,7 +20,7 @@ internal static class TestRunner
             }
         }
 
-        Console.WriteLine($"{tests.Count - failedCount}/{tests.Count} scaffold checks passed.");
+        Console.WriteLine($"{tests.Count - failedCount}/{tests.Count} checks passed.");
         return failedCount;
     }
 }

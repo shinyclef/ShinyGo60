@@ -1,6 +1,7 @@
 namespace ShinyGo60.Companion.Core.Shortcuts;
 
 public sealed record ShortcutBinding(
-    string Shortcut,
+    ShortcutGesture Gesture,
     ShortcutActionKind Action,
-    int TargetLayerId);
+    byte TargetLayerId,
+    string TargetLayerName);

@@ -25,7 +25,8 @@ Use a button on a Logitech G502 X Plus as a Go60 layer switch. The mouse button 
 Each shortcut can be assigned one of two actions:
 
 - **Momentary layer:** activate the target layer when the shortcut is pressed and release that external activation when the shortcut is released. The target remains active only while the mouse button is held.
-- **Go to layer:** select the target layer when the shortcut is pressed and leave it active until another layer action replaces it.
+- **Go to layer:** select the target layer when the shortcut is pressed and leave it active until another Go to layer command or a physical keyboard `&to`
+  action replaces it.
 
 The shortcut and target layer will be configurable rather than tied to a particular mouse button or function key. Using a normal keyboard shortcut also avoids requiring direct integration with Logitech software or a mouse-specific API.
 
@@ -39,7 +40,9 @@ The project will also investigate whether the firmware can reliably report the b
 
 Create a compact widget that lives at the bottom-left of the Windows taskbar area. It should show the active layer name and, only if the battery feasibility gate passes, separate battery levels for the left and right keyboard halves.
 
-The widget should be unobtrusive, readable at a glance, and able to start with Windows 11. The exact implementation—native taskbar integration or a borderless taskbar-adjacent window—will be selected after prototyping, while preserving the intended bottom-left position and behavior.
+The widget is an unobtrusive WPF window parented to the Windows 11 taskbar and positioned at its far left. Because the taskbar owns the child window, fullscreen
+visibility and z-order follow Explorer immediately without a topmost overlay or fullscreen polling. A low-frequency maintenance check reattaches the widget if
+Explorer replaces the taskbar window.
 
 ## Intended workflow
 
@@ -190,7 +193,11 @@ source; `Custom Firmware/Generated`, `Output`, `bin`, and `obj` are disposable a
 
 ## Current status
 
-The project has completed the protocol-v1 implementation, headless keymap-to-UF2 pipeline, Step 10 layer telemetry, and Step 11 per-half battery feasibility.
+The project has completed the protocol-v1 implementation, headless keymap-to-UF2 pipeline, Step 10 layer telemetry, Step 11 per-half battery feasibility,
+Step 12 persistent and leased momentary layer control, and the Step 13 Windows companion core. Step 14 now includes the configuration UI, live shortcut editing,
+start-with-Windows behavior, and a focusless taskbar-child widget; its final physical layout and lifecycle acceptance checks are in progress.
+Step 14 design and acceptance evidence is recorded in
+[Custom Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md](Custom%20Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md).
 The Step 9 UF2 passes its flash, normal
 HID, TRRS, dedicated USB, dedicated Bluetooth, and USB-to-Bluetooth-to-USB handshake checks. The Step 10 UF2 retains normal USB HID and TRRS operation, and its
 manifest-bound snapshots and live effective-layer telemetry pass over both USB and Bluetooth, including USB convergence after a coalesced update. Active-layer
@@ -207,13 +214,15 @@ active heartbeat behavior pass. USB-powered readings may stably saturate at 100%
 - A pinned, single-revision Go60 firmware image definition, offline build scripts, and scoped cleanup.
 - A .NET 10 C# solution with shared protocol and diagnostic libraries, headless builder and companion cores, WPF application shells, offline scaffold tests, and a
   layout-aware USB/Bluetooth diagnostic client.
+- A Windows 11 transport and global-shortcut layer plus a compact diagnostic companion that loads strict manifest-bound settings, selects one USB/Bluetooth
+  command owner, reconnects with bounded backoff, and writes structured JSON-lines logs.
 - A strict Go60 keymap inspector, deterministic layout identity, shared manifest reader/writer, and matching generated firmware header.
 - A command-line build tool with clean workspaces, pinned Docker metadata verification, structural and identity-aware UF2 validation, atomic matched outputs, and
   cancellation cleanup.
 - An out-of-tree ZMK module with central-only USB CDC/ACM and bonded, encrypted Bluetooth GATT transports included through the supported MoErgo build hook.
 - Matching native C and C# protocol-v1.1 codecs driven by the same fourteen golden byte vectors.
-- Read-only central layer and battery observers plus manifest-bound C# trackers that converge across revision gaps, resolve layer IDs, and distinguish fresh,
-  stale, and unavailable per-half battery readings.
+- A central layer ownership controller, battery observers, and manifest-bound C# trackers that converge across revision gaps, resolve layer IDs, and distinguish
+  fresh, stale, and unavailable per-half battery readings.
 
 The baseline UF2 has passed reproducible build, structural validation, and an initial hardware flash test. Its exact pins, hashes, measurements, and remaining
 regression checklist are recorded in [Custom Firmware/BuildSupport/BASELINE_V25_11.md](Custom%20Firmware/BuildSupport/BASELINE_V25_11.md).
@@ -265,7 +274,24 @@ sensor sampling. Software, pinned offline firmware, and the required physical Bl
 is retained for version one. Windows sleep/resume is deferred because the test PC does not sleep reliably. Evidence and the completed gate are recorded in
 [Custom Firmware/BuildSupport/STEP11_BATTERY_FEASIBILITY.md](Custom%20Firmware/BuildSupport/STEP11_BATTERY_FEASIBILITY.md).
 
-The graphical one-click wrapper and production companion behavior have not yet been implemented. Step 4 scaffold evidence is recorded in
+Step 12 composes keyboard-owned, runtime-persistent, and session-leased momentary layer state without replacing ordinary ZMK behavior. Commands now run over the
+same USB and encrypted Bluetooth protocol, use revision checks and strictly increasing IDs, and remove momentary ownership on release, lease expiry, session
+replacement, or transport loss. The C# command state machine and bounded transport diagnostic pass offline checks, and the matching firmware builds without
+network access. Physical control tests pass over USB and Bluetooth, including USB same-layer ownership in both release orders, multiple external owners, session
+and transport replacement, USB and Bluetooth loss, lease expiry, process termination, and a full keyboard reboot. The reboot cleared both a persistent Navigation
+selection and an active momentary Keypad hold, after which both halves typed normally over USB and TRRS. Windows sleep remains explicitly deferred because the
+test PC does not enter sleep reliably; the available recovery and state-safety matrix passes, so Step 12 is complete.
+The ownership truth table, recovery rules, artifact identity, and test commands are recorded in
+[Custom Firmware/BuildSupport/STEP12_LAYER_CONTROL.md](Custom%20Firmware/BuildSupport/STEP12_LAYER_CONTROL.md).
+
+Step 13 turns the protocol pieces into a long-running Windows 11 companion core. It discovers and validates the exact Go60 over USB or paired encrypted
+Bluetooth, owns only one command session, loads manifest-backed shortcut settings, captures global key-down/key-up events, suppresses OS repeat, renews a held
+momentary action, and reconnects with capped exponential backoff. The real G502 `F23` shortcut passed full momentary Navigation round trips over both transports;
+USB-to-Bluetooth switching and app-before-keyboard startup recovery also passed. A compact WPF diagnostic host exposes state and writes structured logs while
+remaining independent of the final widget. Windows sleep is still deferred on this PC. Evidence is recorded in
+[Custom Firmware/BuildSupport/STEP13_HEADLESS_COMPANION.md](Custom%20Firmware/BuildSupport/STEP13_HEADLESS_COMPANION.md).
+
+The graphical one-click builder has not yet been implemented. Step 4 scaffold evidence is recorded in
 [Custom Firmware/BuildSupport/STEP4_SCAFFOLD.md](Custom%20Firmware/BuildSupport/STEP4_SCAFFOLD.md).
 
 ## Design principles
@@ -288,7 +314,7 @@ The graphical one-click wrapper and production companion behavior have not yet b
 5. Build the reliable headless keymap-to-UF2 pipeline and wrap it in a one-click C# builder.
 6. Report effective layer changes and decide the separate left/right battery feasibility gate.
 7. Add persistent and leased momentary layer commands with disconnect and crash safety.
-8. Build the Windows 11 companion with configurable shortcut key-down/key-up handling.
+8. Build the Windows 11 companion with configurable shortcut key-down/key-up handling. **Complete.**
 9. Build and position the bottom-left taskbar widget.
 10. Harden reconnects, sleep/wake, transport switching, flashing, rollback, packaging, and clean-machine setup.
 

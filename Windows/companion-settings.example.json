@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "transportPreference": "automatic",
+  "shortcuts": [
+    {
+      "shortcut": "F23",
+      "action": "momentaryLayer",
+      "targetLayer": "Keypad"
+    }
+  ]
+}

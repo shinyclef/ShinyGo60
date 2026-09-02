@@ -4,9 +4,9 @@ using Windows.Devices.Enumeration;
 using Windows.Devices.SerialCommunication;
 using Windows.Storage.Streams;
 
-namespace ShinyGo60.TransportSpike;
+namespace ShinyGo60.Platform.Windows.Transports;
 
-internal sealed class UsbSerialKeyboardTransport : IKeyboardTransport
+public sealed class UsbSerialKeyboardTransport : IKeyboardTransport, IKeyboardTransportConnectionEvents
 {
     private const ushort Go60VendorId = 0x16C0;
     private const ushort Go60LeftProductId = 0x27DB;
@@ -17,24 +17,32 @@ internal sealed class UsbSerialKeyboardTransport : IKeyboardTransport
     private CancellationTokenSource? readCancellation;
     private Task? readTask;
     private TaskCompletionSource<ReadOnlyMemory<byte>>? pendingResponse;
+    private int connectionLostRaised;
+    private int stopping;
 
     public event EventHandler<KeyboardPacketReceivedEventArgs>? PacketReceived;
 
+    public event EventHandler<KeyboardTransportConnectionLostEventArgs>? ConnectionLost;
+
     public TransportKind Kind => TransportKind.Usb;
 
-    public bool IsConnected => this.device is not null;
+    public bool IsConnected => this.device is not null && Volatile.Read(ref this.connectionLostRaised) == 0;
 
     public string? DeviceName { get; private set; }
 
     public async ValueTask ConnectAsync(CancellationToken cancellationToken = default)
     {
-        if (this.IsConnected)
+        if (this.device is not null)
         {
-            throw new InvalidOperationException("The USB transport is already connected.");
+            throw new InvalidOperationException("The USB transport is already open.");
         }
 
+        Volatile.Write(ref this.connectionLostRaised, 0);
+        Volatile.Write(ref this.stopping, 0);
         string selector = SerialDevice.GetDeviceSelectorFromUsbVidPid(Go60VendorId, Go60LeftProductId);
-        DeviceInformationCollection candidates = await DeviceInformation.FindAllAsync(selector).AsTask(cancellationToken).ConfigureAwait(false);
+        DeviceInformationCollection candidates = await DeviceInformation.FindAllAsync(selector)
+            .AsTask(cancellationToken)
+            .ConfigureAwait(false);
 
         if (candidates.Count == 0)
         {
@@ -48,7 +56,9 @@ internal sealed class UsbSerialKeyboardTransport : IKeyboardTransport
         }
 
         DeviceInformation candidate = candidates[0];
-        SerialDevice? openedDevice = await SerialDevice.FromIdAsync(candidate.Id).AsTask(cancellationToken).ConfigureAwait(false);
+        SerialDevice? openedDevice = await SerialDevice.FromIdAsync(candidate.Id)
+            .AsTask(cancellationToken)
+            .ConfigureAwait(false);
         if (openedDevice is null)
         {
             throw new InvalidOperationException("Windows found the Go60 USB CDC endpoint but could not open it.");
@@ -73,7 +83,7 @@ internal sealed class UsbSerialKeyboardTransport : IKeyboardTransport
         ReadOnlyMemory<byte> request,
         CancellationToken cancellationToken = default)
     {
-        if (this.device is null || this.reader is null || this.writer is null)
+        if (!this.IsConnected || this.reader is null || this.writer is null)
         {
             throw new InvalidOperationException("The USB transport is disconnected.");
         }
@@ -104,6 +114,7 @@ internal sealed class UsbSerialKeyboardTransport : IKeyboardTransport
     public async ValueTask DisconnectAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        Volatile.Write(ref this.stopping, 1);
 
         TaskCompletionSource<ReadOnlyMemory<byte>>? responseSource = Interlocked.Exchange(ref this.pendingResponse, null);
         responseSource?.TrySetException(new IOException("The USB transport disconnected."));
@@ -117,8 +128,8 @@ internal sealed class UsbSerialKeyboardTransport : IKeyboardTransport
         {
             await activeReadTask.ConfigureAwait(false);
         }
-        activeReadCancellation?.Dispose();
 
+        activeReadCancellation?.Dispose();
         this.writer?.Dispose();
         this.writer = null;
         this.reader?.Dispose();
@@ -126,6 +137,8 @@ internal sealed class UsbSerialKeyboardTransport : IKeyboardTransport
         this.device?.Dispose();
         this.device = null;
         this.DeviceName = null;
+        Volatile.Write(ref this.connectionLostRaised, 0);
+        Volatile.Write(ref this.stopping, 0);
     }
 
     public ValueTask DisposeAsync()
@@ -172,6 +185,7 @@ internal sealed class UsbSerialKeyboardTransport : IKeyboardTransport
         {
             TaskCompletionSource<ReadOnlyMemory<byte>>? responseSource = Interlocked.Exchange(ref this.pendingResponse, null);
             responseSource?.TrySetException(exception);
+            this.RaiseConnectionLost(exception);
         }
     }
 
@@ -185,5 +199,13 @@ internal sealed class UsbSerialKeyboardTransport : IKeyboardTransport
         }
 
         this.pendingResponse?.TrySetResult(packet);
+    }
+
+    private void RaiseConnectionLost(Exception cause)
+    {
+        if (Volatile.Read(ref this.stopping) == 0 && Interlocked.Exchange(ref this.connectionLostRaised, 1) == 0)
+        {
+            this.ConnectionLost?.Invoke(this, new KeyboardTransportConnectionLostEventArgs(cause));
+        }
     }
 }

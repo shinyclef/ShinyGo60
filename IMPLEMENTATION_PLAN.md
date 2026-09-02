@@ -203,7 +203,7 @@ The firmware feature module should remain independent of the generated keymap an
 
 Maintain externally requested state without overwriting state created by keys on the Go60:
 
-- A persistent command selects a layer until another persistent layer action replaces it.
+- A persistent command selects a layer until another persistent command or a physical keyboard `&to` action replaces it.
 - A momentary press adds an external activation while the mouse button is held.
 - Releasing the momentary activation reveals whatever keyboard-created and persistent state would otherwise be effective.
 - Invalid layer IDs, malformed messages, layout mismatches, and unsupported protocol versions are rejected without changing keyboard state.
@@ -223,7 +223,8 @@ Momentary activation should therefore be a renewable lease:
 4. Firmware automatically releases the activation if the lease expires.
 5. Firmware also clears session-owned momentary activations when the protocol session ends.
 
-Persistent actions are not cleared by a transient transport disconnect. Whether persistent selections survive a keyboard reboot remains an explicit product decision; the safer initial behavior is runtime-only persistence without recurring flash writes.
+Persistent actions are not cleared by a transient transport disconnect. A physical keyboard `&to` action deliberately clears the external persistent owner so
+the keyboard can always select Home or another layer. Persistent selections are runtime-only and clear on keyboard reboot without recurring flash writes.
 
 ## 7. Transport-independent protocol
 
@@ -302,10 +303,14 @@ The Logitech mouse does not require a Logitech-specific API. Its button can be c
 The widget should:
 
 - Display the effective layer name as its primary value.
-- Sit at the bottom-left of the taskbar area without taking focus.
+- Run as a focusless child of the Windows 11 taskbar at its far left.
 - Display clear connected, disconnected, and stale states.
 - Update from events rather than frequent polling.
 - Show separate left and right battery values only if the battery feasibility gate passes.
+
+The selected hosting method reparents the WPF widget HWND to `Shell_TrayWnd` and uses coordinates relative to the taskbar client area. Explorer consequently owns
+the widget's fullscreen visibility and z-order. A low-frequency lifecycle check is permitted only to detect taskbar replacement and restore attachment; it is
+not used to detect fullscreen applications or update keyboard state.
 
 ## 9. Battery feasibility gate
 
@@ -460,7 +465,7 @@ These choices should be resolved by their associated milestone rather than assum
 - Exact pinned MoErgo ZMK production revision.
 - Whether persistent external layer selection survives keyboard reboot.
 - Exact rule when both USB and Bluetooth connections are simultaneously available.
-- Final WPF widget positioning method and multi-monitor behavior.
+- Multi-monitor policy beyond the primary Windows taskbar.
 - Registry location and immutable digest for the prebuilt Docker image when it is published.
 - Whether flashing remains manual or gains an explicitly confirmed helper after safe bootloader detection is proven.
 

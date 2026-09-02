@@ -19,7 +19,10 @@ internal static class Program
             new("Atomic keymap-to-UF2 pipeline", FirmwareBuildPipelineTests.RunAsync),
             new("Builder process orchestration contract", ProcessContractTests.RunAsync),
             new("Companion shortcut contract", ShortcutContractTests.RunAsync),
+            new("Headless companion lifecycle", CompanionServiceTests.RunAsync),
+            new("Companion widget presentation", CompanionPresentationTests.RunAsync),
             new("Effective-layer state convergence", LayerStateTrackerTests.RunAsync),
+            new("Layer-command failure recovery", LayerCommandStateMachineTests.RunAsync),
             new("Per-half battery state convergence", BatteryStateTrackerTests.RunAsync),
             new("Structured diagnostic sink", DiagnosticSinkTests.RunAsync),
         ];

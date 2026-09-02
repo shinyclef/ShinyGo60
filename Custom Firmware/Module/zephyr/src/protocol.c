@@ -4,13 +4,15 @@
 #include <zephyr/random/random.h>
 #include <zephyr/sys/util.h>
 
+#include <shinygo60/layer_control.h>
 #include <shinygo60/protocol.h>
 
 #define LAYOUT_IDENTIFIER_PREFIX "sg60-v1-"
 #define LAYOUT_IDENTIFIER_PREFIX_LENGTH 8U
 #define LAYOUT_IDENTIFIER_HEX_LENGTH 32U
 #define SUPPORTED_CAPABILITIES \
-    (SHINYGO60_CAPABILITY_STATE_TELEMETRY | SHINYGO60_CAPABILITY_BATTERY_TELEMETRY)
+    (SHINYGO60_CAPABILITY_STATE_TELEMETRY | SHINYGO60_CAPABILITY_PERSISTENT_LAYER | \
+     SHINYGO60_CAPABILITY_MOMENTARY_LAYER | SHINYGO60_CAPABILITY_BATTERY_TELEMETRY)
 #define EVENT_RETRY_DELAY K_MSEC(20)
 
 BUILD_ASSERT(sizeof(CONFIG_SHINYGO60_LAYOUT_IDENTIFIER) - 1U ==
@@ -18,6 +20,7 @@ BUILD_ASSERT(sizeof(CONFIG_SHINYGO60_LAYOUT_IDENTIFIER) - 1U ==
              "The generated ShinyGo60 layout identifier has an invalid length");
 
 static struct k_spinlock session_lock;
+static K_MUTEX_DEFINE(command_mutex);
 static uint32_t active_session_id;
 static enum shinygo60_transport active_transport;
 static uint8_t selected_capabilities;
@@ -25,6 +28,11 @@ static bool layer_snapshot_sent;
 static bool battery_snapshot_sent;
 static bool layer_event_pending;
 static bool battery_event_pending;
+static uint32_t layer_event_source_command_id;
+static bool command_cache_populated;
+static uint32_t latest_command_id;
+static uint8_t latest_command_request[SHINYGO60_PACKET_SIZE];
+static uint8_t latest_command_response[SHINYGO60_PACKET_SIZE];
 static struct shinygo60_layer_state current_state = {
     .revision = 1U,
     .effective_layer = 0U,
@@ -107,18 +115,27 @@ static uint32_t start_session(enum shinygo60_transport transport, uint8_t capabi
     battery_snapshot_sent = false;
     layer_event_pending = false;
     battery_event_pending = false;
+    layer_event_source_command_id = 0U;
     k_spin_unlock(&session_lock, key);
+
+    command_cache_populated = false;
+    latest_command_id = 0U;
+    shinygo60_layer_control_begin_session(session_id);
     return session_id;
 }
 
-static uint8_t classify_session(enum shinygo60_transport transport, uint32_t session_id)
+static uint8_t classify_session(
+    enum shinygo60_transport transport, uint32_t session_id, uint8_t required_capability)
 {
     k_spinlock_key_t key = k_spin_lock(&session_lock);
-    uint8_t result = SHINYGO60_ERROR_CAPABILITY_UNAVAILABLE;
+    uint8_t result = 0U;
     if (active_session_id == 0U) {
         result = SHINYGO60_ERROR_NO_SESSION;
     } else if (active_session_id != session_id || active_transport != transport) {
         result = SHINYGO60_ERROR_WRONG_SESSION;
+    } else if (required_capability != 0U &&
+               (selected_capabilities & required_capability) == 0U) {
+        result = SHINYGO60_ERROR_CAPABILITY_UNAVAILABLE;
     }
 
     k_spin_unlock(&session_lock, key);
@@ -142,6 +159,34 @@ static struct shinygo60_message create_error(
             .code = code,
             .offending_message_type = offending_type,
             .detail = detail,
+        },
+    };
+    return response;
+}
+
+static struct shinygo60_layer_state read_layer_state(void)
+{
+    k_spinlock_key_t key = k_spin_lock(&session_lock);
+    struct shinygo60_layer_state state = current_state;
+    k_spin_unlock(&session_lock, key);
+    return state;
+}
+
+uint32_t shinygo60_protocol_layer_revision(void)
+{
+    return read_layer_state().revision;
+}
+
+static struct shinygo60_message create_command_result(
+    uint32_t session_id, uint32_t command_id, uint8_t status)
+{
+    struct shinygo60_message response = {
+        .type = SHINYGO60_MESSAGE_COMMAND_RESULT,
+        .payload.command_result = {
+            .session_id = session_id,
+            .command_id = command_id,
+            .status = status,
+            .state = read_layer_state(),
         },
     };
     return response;
@@ -286,33 +331,181 @@ static bool handle_get_battery(
     return shinygo60_protocol_encode(&snapshot, response);
 }
 
-static bool request_context(
-    const struct shinygo60_message *request,
-    uint32_t *session_id,
-    uint32_t *related_id,
-    uint32_t *state_revision)
+struct command_context {
+    uint32_t session_id;
+    uint32_t command_id;
+    uint8_t required_capability;
+};
+
+static bool read_command_context(
+    const struct shinygo60_message *request, struct command_context *context)
 {
     switch (request->type) {
-    case SHINYGO60_MESSAGE_GET_STATE:
-        *session_id = request->payload.get_state.session_id;
-        *related_id = request->payload.get_state.request_id;
-        *state_revision = 0U;
-        return true;
     case SHINYGO60_MESSAGE_SET_PERSISTENT_LAYER:
+        context->session_id = request->payload.layer_command.session_id;
+        context->command_id = request->payload.layer_command.command_id;
+        context->required_capability = SHINYGO60_CAPABILITY_PERSISTENT_LAYER;
+        return true;
     case SHINYGO60_MESSAGE_PRESS_MOMENTARY_LAYER:
-        *session_id = request->payload.layer_command.session_id;
-        *related_id = request->payload.layer_command.command_id;
-        *state_revision = request->payload.layer_command.expected_revision;
+        context->session_id = request->payload.layer_command.session_id;
+        context->command_id = request->payload.layer_command.command_id;
+        context->required_capability = SHINYGO60_CAPABILITY_MOMENTARY_LAYER;
         return true;
     case SHINYGO60_MESSAGE_RENEW_MOMENTARY_LAYER:
     case SHINYGO60_MESSAGE_RELEASE_MOMENTARY_LAYER:
-        *session_id = request->payload.momentary_command.session_id;
-        *related_id = request->payload.momentary_command.command_id;
-        *state_revision = 0U;
+        context->session_id = request->payload.momentary_command.session_id;
+        context->command_id = request->payload.momentary_command.command_id;
+        context->required_capability = SHINYGO60_CAPABILITY_MOMENTARY_LAYER;
         return true;
     default:
         return false;
     }
+}
+
+static struct shinygo60_message create_command_error(
+    const struct shinygo60_message *request,
+    const struct command_context *context,
+    uint8_t code,
+    uint16_t detail)
+{
+    return create_error(
+        context->session_id,
+        context->command_id,
+        shinygo60_protocol_layer_revision(),
+        code,
+        (uint8_t)request->type,
+        detail);
+}
+
+static struct shinygo60_message execute_control_command(
+    enum shinygo60_transport transport,
+    const struct shinygo60_message *request,
+    const struct command_context *context)
+{
+    uint8_t session_error = classify_session(
+        transport, context->session_id, context->required_capability);
+    if (session_error != 0U) {
+        return create_command_error(request, context, session_error, context->required_capability);
+    }
+
+    enum shinygo60_layer_control_result result;
+    switch (request->type) {
+    case SHINYGO60_MESSAGE_SET_PERSISTENT_LAYER:
+        if (!shinygo60_layer_control_layer_is_valid(request->payload.layer_command.layer)) {
+            return create_command_error(
+                request, context, SHINYGO60_ERROR_INVALID_LAYER, request->payload.layer_command.layer);
+        }
+        result = shinygo60_layer_control_set_persistent(
+            request->payload.layer_command.layer,
+            request->payload.layer_command.expected_revision,
+            context->command_id);
+        break;
+    case SHINYGO60_MESSAGE_PRESS_MOMENTARY_LAYER:
+        if (!shinygo60_layer_control_layer_is_valid(request->payload.layer_command.layer)) {
+            return create_command_error(
+                request, context, SHINYGO60_ERROR_INVALID_LAYER, request->payload.layer_command.layer);
+        }
+        result = shinygo60_layer_control_press(
+            context->session_id,
+            context->command_id,
+            request->payload.layer_command.layer,
+            request->payload.layer_command.lease_units,
+            request->payload.layer_command.expected_revision,
+            context->command_id);
+        break;
+    case SHINYGO60_MESSAGE_RENEW_MOMENTARY_LAYER:
+        result = shinygo60_layer_control_renew(
+            context->session_id,
+            request->payload.momentary_command.activation_id,
+            request->payload.momentary_command.lease_units);
+        break;
+    case SHINYGO60_MESSAGE_RELEASE_MOMENTARY_LAYER:
+        result = shinygo60_layer_control_release(
+            context->session_id,
+            request->payload.momentary_command.activation_id,
+            context->command_id);
+        break;
+    default:
+        return create_command_error(request, context, SHINYGO60_ERROR_UNSUPPORTED_MESSAGE, 0U);
+    }
+
+    switch (result) {
+    case SHINYGO60_LAYER_CONTROL_APPLIED:
+        return create_command_result(
+            context->session_id, context->command_id, SHINYGO60_COMMAND_APPLIED);
+    case SHINYGO60_LAYER_CONTROL_NO_CHANGE:
+        return create_command_result(
+            context->session_id, context->command_id, SHINYGO60_COMMAND_NO_CHANGE);
+    case SHINYGO60_LAYER_CONTROL_ALREADY_RELEASED:
+        return create_command_result(
+            context->session_id, context->command_id, SHINYGO60_COMMAND_ALREADY_RELEASED);
+    case SHINYGO60_LAYER_CONTROL_STALE_STATE:
+        return create_command_error(request, context, SHINYGO60_ERROR_STALE_STATE, 0U);
+    case SHINYGO60_LAYER_CONTROL_BUSY:
+        return create_command_error(
+            request,
+            context,
+            SHINYGO60_ERROR_BUSY,
+            SHINYGO60_MOMENTARY_ACTIVATION_CAPACITY);
+    case SHINYGO60_LAYER_CONTROL_WRONG_SESSION:
+        return create_command_error(request, context, SHINYGO60_ERROR_WRONG_SESSION, 0U);
+    case SHINYGO60_LAYER_CONTROL_INTERNAL:
+    default:
+        return create_command_error(request, context, SHINYGO60_ERROR_INTERNAL, 0U);
+    }
+}
+
+static bool handle_control_command(
+    enum shinygo60_transport transport,
+    const struct shinygo60_message *request,
+    const uint8_t request_packet[SHINYGO60_PACKET_SIZE],
+    uint8_t response[SHINYGO60_PACKET_SIZE])
+{
+    struct command_context context;
+    if (!read_command_context(request, &context)) {
+        return false;
+    }
+
+    uint8_t session_error = classify_session(transport, context.session_id, 0U);
+    if (session_error != 0U) {
+        struct shinygo60_message error = create_command_error(
+            request, &context, session_error, 0U);
+        return shinygo60_protocol_encode(&error, response);
+    }
+
+    if (command_cache_populated && context.command_id <= latest_command_id) {
+        if (context.command_id < latest_command_id) {
+            struct shinygo60_message error = create_command_error(
+                request, &context, SHINYGO60_ERROR_STALE_COMMAND, 0U);
+            return shinygo60_protocol_encode(&error, response);
+        }
+
+        if (memcmp(request_packet, latest_command_request, SHINYGO60_PACKET_SIZE) != 0) {
+            struct shinygo60_message error = create_command_error(
+                request, &context, SHINYGO60_ERROR_DUPLICATE_CONFLICT, 0U);
+            return shinygo60_protocol_encode(&error, response);
+        }
+
+        if (latest_command_response[3] != SHINYGO60_MESSAGE_COMMAND_RESULT) {
+            memcpy(response, latest_command_response, SHINYGO60_PACKET_SIZE);
+            return true;
+        }
+
+        struct shinygo60_message duplicate = create_command_result(
+            context.session_id, context.command_id, SHINYGO60_COMMAND_DUPLICATE);
+        return shinygo60_protocol_encode(&duplicate, response);
+    }
+
+    struct shinygo60_message result = execute_control_command(transport, request, &context);
+    if (!shinygo60_protocol_encode(&result, response)) {
+        return false;
+    }
+
+    command_cache_populated = true;
+    latest_command_id = context.command_id;
+    memcpy(latest_command_request, request_packet, SHINYGO60_PACKET_SIZE);
+    memcpy(latest_command_response, response, SHINYGO60_PACKET_SIZE);
+    return true;
 }
 
 bool shinygo60_protocol_handle(
@@ -347,43 +540,66 @@ bool shinygo60_protocol_handle(
         return shinygo60_protocol_encode(&error, response);
     }
 
-    if (decoded.type == SHINYGO60_MESSAGE_HELLO) {
-        return handle_hello(transport, &decoded, layout, response);
-    }
-
-    if (decoded.type == SHINYGO60_MESSAGE_GET_STATE) {
-        return handle_get_state(transport, &decoded, response);
-    }
-
-    if (decoded.type == SHINYGO60_MESSAGE_GET_BATTERY) {
-        return handle_get_battery(transport, &decoded, response);
-    }
-
-    uint32_t session_id;
-    uint32_t related_id;
-    uint32_t state_revision;
-    if (!request_context(&decoded, &session_id, &related_id, &state_revision)) {
+    k_mutex_lock(&command_mutex, K_FOREVER);
+    bool handled;
+    switch (decoded.type) {
+    case SHINYGO60_MESSAGE_HELLO:
+        handled = handle_hello(transport, &decoded, layout, response);
+        break;
+    case SHINYGO60_MESSAGE_GET_STATE:
+        handled = handle_get_state(transport, &decoded, response);
+        break;
+    case SHINYGO60_MESSAGE_GET_BATTERY:
+        handled = handle_get_battery(transport, &decoded, response);
+        break;
+    case SHINYGO60_MESSAGE_SET_PERSISTENT_LAYER:
+    case SHINYGO60_MESSAGE_PRESS_MOMENTARY_LAYER:
+    case SHINYGO60_MESSAGE_RENEW_MOMENTARY_LAYER:
+    case SHINYGO60_MESSAGE_RELEASE_MOMENTARY_LAYER:
+        handled = handle_control_command(transport, &decoded, request, response);
+        break;
+    default: {
         struct shinygo60_message error = create_error(
-            0U, 0U, 0U, SHINYGO60_ERROR_UNSUPPORTED_MESSAGE, (uint8_t)decoded.type, 0U);
-        return shinygo60_protocol_encode(&error, response);
+            0U,
+            0U,
+            shinygo60_protocol_layer_revision(),
+            SHINYGO60_ERROR_UNSUPPORTED_MESSAGE,
+            (uint8_t)decoded.type,
+            0U);
+        handled = shinygo60_protocol_encode(&error, response);
+        break;
     }
-
-    uint8_t code = classify_session(transport, session_id);
-    struct shinygo60_message error = create_error(
-        session_id, related_id, state_revision, code, (uint8_t)decoded.type, 0U);
-    return shinygo60_protocol_encode(&error, response);
+    }
+    k_mutex_unlock(&command_mutex);
+    return handled;
 }
 
-void shinygo60_protocol_observe_effective_layer(uint8_t effective_layer)
+void shinygo60_protocol_observe_layer_state(
+    uint8_t effective_layer,
+    uint8_t persistent_layer,
+    uint8_t momentary_count,
+    uint32_t source_command_id)
 {
     if (effective_layer == SHINYGO60_NO_LAYER) {
         return;
     }
 
+    uint8_t indicators = (persistent_layer == SHINYGO60_NO_LAYER
+                              ? 0U
+                              : SHINYGO60_LAYER_STATE_PERSISTENT_ACTIVE) |
+                         (momentary_count == 0U
+                              ? 0U
+                              : SHINYGO60_LAYER_STATE_MOMENTARY_ACTIVE);
     bool send_event = false;
     k_spinlock_key_t key = k_spin_lock(&session_lock);
-    if (current_state.effective_layer != effective_layer) {
+    if (current_state.effective_layer != effective_layer ||
+        current_state.persistent_layer != persistent_layer ||
+        current_state.momentary_count != momentary_count ||
+        current_state.indicators != indicators) {
         current_state.effective_layer = effective_layer;
+        current_state.persistent_layer = persistent_layer;
+        current_state.momentary_count = momentary_count;
+        current_state.indicators = indicators;
         current_state.revision++;
         if (current_state.revision == 0U) {
             active_session_id = 0U;
@@ -392,10 +608,12 @@ void shinygo60_protocol_observe_effective_layer(uint8_t effective_layer)
             battery_snapshot_sent = false;
             layer_event_pending = false;
             battery_event_pending = false;
+            layer_event_source_command_id = 0U;
             current_state.revision = 1U;
         } else if (active_session_id != 0U && layer_snapshot_sent &&
                    (selected_capabilities & SHINYGO60_CAPABILITY_STATE_TELEMETRY) != 0U) {
             layer_event_pending = true;
+            layer_event_source_command_id = source_command_id;
             send_event = true;
         }
     }
@@ -466,16 +684,27 @@ void shinygo60_protocol_observe_battery(
 
 void shinygo60_protocol_transport_disconnected(enum shinygo60_transport transport)
 {
+    k_mutex_lock(&command_mutex, K_FOREVER);
+    uint32_t ended_session_id = 0U;
     k_spinlock_key_t key = k_spin_lock(&session_lock);
     if (active_session_id != 0U && active_transport == transport) {
+        ended_session_id = active_session_id;
         active_session_id = 0U;
         selected_capabilities = 0U;
         layer_snapshot_sent = false;
         battery_snapshot_sent = false;
         layer_event_pending = false;
         battery_event_pending = false;
+        layer_event_source_command_id = 0U;
     }
     k_spin_unlock(&session_lock, key);
+
+    if (ended_session_id != 0U) {
+        command_cache_populated = false;
+        latest_command_id = 0U;
+        shinygo60_layer_control_end_session(ended_session_id);
+    }
+    k_mutex_unlock(&command_mutex);
 }
 
 static bool send_event_packet(
@@ -508,6 +737,7 @@ static void layer_event_work_handler(struct k_work *work)
     }
 
     event.payload.state.session_id = active_session_id;
+    event.payload.state.related_id = layer_event_source_command_id;
     event.payload.state.state = current_state;
     transport = active_transport;
     k_spin_unlock(&session_lock, key);
@@ -517,7 +747,8 @@ static void layer_event_work_handler(struct k_work *work)
 
     key = k_spin_lock(&session_lock);
     if (sent && layer_event_pending && active_session_id == event.payload.state.session_id &&
-        active_transport == transport && current_state.revision == event.payload.state.state.revision) {
+        active_transport == transport && current_state.revision == event.payload.state.state.revision &&
+        layer_event_source_command_id == event.payload.state.related_id) {
         layer_event_pending = false;
     }
     bool retry = layer_event_pending && active_session_id != 0U && layer_snapshot_sent;

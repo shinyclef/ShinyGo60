@@ -8,4 +8,13 @@ internal enum TransportRunMode
     Switch,
     WatchUsb,
     WatchBluetooth,
+    ControlUsb,
+    ControlBluetooth,
+    OwnershipUsb,
+    OwnershipBluetooth,
+    SelectUsb,
+    SelectBluetooth,
+    ControlSwitch,
+    HoldUsb,
+    HoldBluetooth,
 }

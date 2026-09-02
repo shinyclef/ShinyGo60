@@ -1,11 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>
     <UseWPF>true</UseWPF>
     <RootNamespace>ShinyGo60.Companion</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ShinyGo60.Companion.Core\ShinyGo60.Companion.Core.csproj" />
+    <ProjectReference Include="..\ShinyGo60.Platform.Windows\ShinyGo60.Platform.Windows.csproj" />
   </ItemGroup>
 </Project>

@@ -5,9 +5,9 @@ using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Devices.Enumeration;
 using Windows.Storage.Streams;
 
-namespace ShinyGo60.TransportSpike;
+namespace ShinyGo60.Platform.Windows.Transports;
 
-internal sealed class BluetoothGattKeyboardTransport : IKeyboardTransport
+public sealed class BluetoothGattKeyboardTransport : IKeyboardTransport, IKeyboardTransportConnectionEvents
 {
     private static readonly Guid ServiceId = new("5A9C0000-7F76-4C2A-9C46-9B7317F6A1E0");
     private static readonly Guid MessageCharacteristicId = new("5A9C0001-7F76-4C2A-9C46-9B7317F6A1E0");
@@ -16,24 +16,33 @@ internal sealed class BluetoothGattKeyboardTransport : IKeyboardTransport
     private GattDeviceService? service;
     private GattCharacteristic? characteristic;
     private TaskCompletionSource<ReadOnlyMemory<byte>>? pendingResponse;
+    private int connectionLostRaised;
+    private int stopping;
 
     public event EventHandler<KeyboardPacketReceivedEventArgs>? PacketReceived;
 
+    public event EventHandler<KeyboardTransportConnectionLostEventArgs>? ConnectionLost;
+
     public TransportKind Kind => TransportKind.Bluetooth;
 
-    public bool IsConnected => this.device is not null && this.characteristic is not null;
+    public bool IsConnected =>
+        this.device is not null && this.characteristic is not null && Volatile.Read(ref this.connectionLostRaised) == 0;
 
     public string? DeviceName => this.device?.Name;
 
     public async ValueTask ConnectAsync(CancellationToken cancellationToken = default)
     {
-        if (this.IsConnected)
+        if (this.device is not null)
         {
-            throw new InvalidOperationException("The Bluetooth transport is already connected.");
+            throw new InvalidOperationException("The Bluetooth transport is already open.");
         }
 
+        Volatile.Write(ref this.connectionLostRaised, 0);
+        Volatile.Write(ref this.stopping, 0);
         string selector = BluetoothLEDevice.GetDeviceSelectorFromPairingState(true);
-        DeviceInformationCollection candidates = await DeviceInformation.FindAllAsync(selector).AsTask(cancellationToken).ConfigureAwait(false);
+        DeviceInformationCollection candidates = await DeviceInformation.FindAllAsync(selector)
+            .AsTask(cancellationToken)
+            .ConfigureAwait(false);
         int pairedCandidateCount = 0;
         List<string> discoveryOutcomes = [];
 
@@ -99,6 +108,7 @@ internal sealed class BluetoothGattKeyboardTransport : IKeyboardTransport
                 $"Discovery results: {outcomeSummary}.");
         }
 
+        this.device.ConnectionStatusChanged += this.OnConnectionStatusChanged;
         GattCharacteristicsResult characteristics = await this.service
             .GetCharacteristicsForUuidAsync(MessageCharacteristicId, BluetoothCacheMode.Uncached)
             .AsTask(cancellationToken)
@@ -134,7 +144,7 @@ internal sealed class BluetoothGattKeyboardTransport : IKeyboardTransport
         ReadOnlyMemory<byte> request,
         CancellationToken cancellationToken = default)
     {
-        if (this.characteristic is null)
+        if (!this.IsConnected || this.characteristic is null)
         {
             throw new InvalidOperationException("The Bluetooth transport is disconnected.");
         }
@@ -173,8 +183,15 @@ internal sealed class BluetoothGattKeyboardTransport : IKeyboardTransport
 
     public async ValueTask DisconnectAsync(CancellationToken cancellationToken = default)
     {
+        Volatile.Write(ref this.stopping, 1);
         TaskCompletionSource<ReadOnlyMemory<byte>>? responseSource = Interlocked.Exchange(ref this.pendingResponse, null);
         responseSource?.TrySetException(new IOException("The Bluetooth transport disconnected."));
+
+        BluetoothLEDevice? activeDevice = this.device;
+        if (activeDevice is not null)
+        {
+            activeDevice.ConnectionStatusChanged -= this.OnConnectionStatusChanged;
+        }
 
         GattCharacteristic? activeCharacteristic = this.characteristic;
         this.characteristic = null;
@@ -197,8 +214,10 @@ internal sealed class BluetoothGattKeyboardTransport : IKeyboardTransport
         {
             this.service?.Dispose();
             this.service = null;
-            this.device?.Dispose();
+            activeDevice?.Dispose();
             this.device = null;
+            Volatile.Write(ref this.connectionLostRaised, 0);
+            Volatile.Write(ref this.stopping, 0);
         }
     }
 
@@ -210,14 +229,22 @@ internal sealed class BluetoothGattKeyboardTransport : IKeyboardTransport
         }
         catch
         {
-            // DisconnectAsync has already released local resources. A remote CCC cleanup failure is non-fatal during disposal.
+            // Local resources are released in DisconnectAsync even if remote subscription cleanup fails.
+        }
+    }
+
+    private void OnConnectionStatusChanged(BluetoothLEDevice sender, object args)
+    {
+        _ = args;
+        if (sender.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
+        {
+            this.RaiseConnectionLost(new IOException("The Go60 Bluetooth connection was lost."));
         }
     }
 
     private void OnValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
     {
         _ = sender;
-
         using DataReader reader = DataReader.FromBuffer(args.CharacteristicValue);
         byte[] value = new byte[reader.UnconsumedBufferLength];
         reader.ReadBytes(value);
@@ -234,5 +261,15 @@ internal sealed class BluetoothGattKeyboardTransport : IKeyboardTransport
         }
 
         this.pendingResponse?.TrySetResult(packet);
+    }
+
+    private void RaiseConnectionLost(Exception cause)
+    {
+        if (Volatile.Read(ref this.stopping) == 0 && Interlocked.Exchange(ref this.connectionLostRaised, 1) == 0)
+        {
+            TaskCompletionSource<ReadOnlyMemory<byte>>? responseSource = Interlocked.Exchange(ref this.pendingResponse, null);
+            responseSource?.TrySetException(cause);
+            this.ConnectionLost?.Invoke(this, new KeyboardTransportConnectionLostEventArgs(cause));
+        }
     }
 }

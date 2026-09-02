@@ -66,7 +66,10 @@ static bool submit_reserved_indication(
 static void indication_configuration_changed(const struct bt_gatt_attr *attribute, uint16_t value)
 {
     ARG_UNUSED(attribute);
-    ARG_UNUSED(value);
+
+    if (value != BT_GATT_CCC_INDICATE) {
+        shinygo60_protocol_transport_disconnected(SHINYGO60_TRANSPORT_BLUETOOTH);
+    }
 }
 
 struct bond_search {

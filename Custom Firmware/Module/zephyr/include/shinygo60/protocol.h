@@ -191,7 +191,13 @@ bool shinygo60_protocol_handle(
     size_t request_length,
     uint8_t response[SHINYGO60_PACKET_SIZE]);
 
-void shinygo60_protocol_observe_effective_layer(uint8_t effective_layer);
+void shinygo60_protocol_observe_layer_state(
+    uint8_t effective_layer,
+    uint8_t persistent_layer,
+    uint8_t momentary_count,
+    uint32_t source_command_id);
+
+uint32_t shinygo60_protocol_layer_revision(void);
 
 void shinygo60_protocol_observe_battery(
     enum shinygo60_battery_half half, uint8_t level, bool available, bool stale);

@@ -1,8 +1,8 @@
 # ShinyGo60 Development Plan
 
-Status: Step 11 complete; Step 12 persistent and momentary layer control is next
+Status: Step 14 implementation complete; physical acceptance checks in progress
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 This is the ordered execution plan for ShinyGo60. It turns the architecture in
 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) into development steps with explicit dependencies, deliverables, and completion gates.
@@ -34,8 +34,8 @@ firmware protocol, companion, widget, and configuration.
 | G0: Recovery readiness | The user can flash and recover both halves and retains a known-good UF2 | All custom firmware experiments | Accepted from existing user experience |
 | G1: Baseline build | An unchanged exported keymap builds and runs correctly | Custom firmware integration | Hardware smoke test passed; detailed checklist pending |
 | G2: Storage | The selected local build path meets an accepted measured footprint | One-click builder commitment | Passed: 4.46 GB persistent image; prebuilt pull selected |
-| G3: Dual transport | The same message round-trips over USB and encrypted BLE GATT | Layer features and production UI | Pending |
-| G4: State safety | Telemetry converges and momentary layers cannot become stuck | Daily-use beta | Pending |
+| G3: Dual transport | The same message round-trips over USB and encrypted BLE GATT | Layer features and production UI | Passed in Steps 6 and 9-13 |
+| G4: State safety | Telemetry converges and momentary layers cannot become stuck | Daily-use beta | Passed in Steps 10-13 |
 | G5: Clean-machine acceptance | A non-developer completes the full workflow | Version 1.0 | Pending |
 
 If a blocking gate fails, work stops at that gate while the architecture is corrected. The plan must not conceal a failed gate behind later UI work.
@@ -472,15 +472,23 @@ Before coding, write a truth table covering keyboard-created state, an external 
 
 Work:
 
-- [ ] Implement validated persistent layer selection.
-- [ ] Decide and document whether persistent state survives a keyboard reboot; the initial recommendation is runtime-only.
-- [ ] Give each momentary activation a session and token.
-- [ ] Implement press, periodic renewal, explicit release, session cleanup, and firmware expiry.
-- [ ] Make commands idempotent where repetition is possible.
-- [ ] Reject renewals and releases belonging to an old session.
-- [ ] On companion reconnect, forget held shortcuts and require a fresh physical key-down.
-- [ ] Test quick release before acknowledgement, duplicates, reordering, process termination, USB removal, BLE loss, Windows sleep, radio loss, keyboard reset, and transport switching while held.
-- [ ] Verify that releasing an external momentary layer reveals the state created by keyboard keys and persistent commands.
+- [x] Implement validated persistent layer selection.
+- [x] Decide and document whether persistent state survives a keyboard reboot; the initial recommendation is runtime-only.
+- [x] Give each momentary activation a session and token.
+- [x] Implement press, periodic renewal, explicit release, session cleanup, and firmware expiry.
+- [x] Make commands idempotent where repetition is possible.
+- [x] Reject renewals and releases belonging to an old session.
+- [x] On companion reconnect, forget held shortcuts and require a fresh physical key-down.
+- [x] Test quick release before acknowledgement, duplicates, reordering, process termination, USB removal, BLE loss, radio loss, keyboard reset, and transport
+  switching while held. Windows sleep is explicitly deferred because this PC does not enter sleep reliably; equivalent session and transport recovery paths pass.
+- [x] Verify that releasing an external momentary layer reveals the state created by keyboard keys and persistent commands.
+
+Physical testing passes persistent and momentary commands over USB and Bluetooth, simultaneous external owners, same-layer physical/external ownership in both
+release orders, non-default persistent state across sessions and transports, and held-state cleanup on process termination, session replacement, physical USB
+loss, Bluetooth radio loss, and transport handoff. A combined reboot test began with persistent Navigation plus a momentary Keypad hold and restarted at Home
+with neither external owner present; both halves then typed normally over USB and TRRS. The exported keymap has no conditional layer. Windows sleep remains
+deferred because the test PC does not sleep reliably. A 2026-09-03 regression correction now makes physical `&to` replace a companion persistent selection;
+matched-firmware USB/Bluetooth verification is pending.
 
 Deliverables:
 
@@ -496,22 +504,22 @@ Done when:
 
 Depends on: Steps 9 and 10.
 
-## Step 13: Build the headless companion core
+## Step 13: Build the headless companion core (complete)
 
 Goal: complete the daily workflow without depending on final UI.
 
 Work:
 
-- [ ] Discover the correct Go60 over USB and Bluetooth.
-- [ ] Select one command-owning transport and arbitrate transport switches.
-- [ ] Handshake, validate the layout, request a snapshot, and maintain connection state.
-- [ ] Reconnect with bounded backoff after sleep, disconnect, or keyboard restart.
-- [ ] Load and validate the manifest and user configuration.
-- [ ] Detect configured global shortcut key-down and key-up events.
-- [ ] Suppress OS key-repeat from creating duplicate presses.
-- [ ] Renew momentary leases only while the shortcut remains physically held.
-- [ ] Test shortcuts generated by the real G502 as well as synthetic input sequences.
-- [ ] Provide useful diagnostic logs and a compact diagnostic status view.
+- [x] Discover the correct Go60 over USB and Bluetooth.
+- [x] Select one command-owning transport and arbitrate transport switches.
+- [x] Handshake, validate the layout, request a snapshot, and maintain connection state.
+- [x] Reconnect with bounded backoff after sleep, disconnect, or keyboard restart. Physical Windows sleep remains deferred on this test PC.
+- [x] Load and validate the manifest and user configuration.
+- [x] Detect configured global shortcut key-down and key-up events.
+- [x] Suppress OS key-repeat from creating duplicate presses.
+- [x] Renew momentary leases only while the shortcut remains physically held.
+- [x] Test shortcuts generated by the real G502 as well as synthetic input sequences.
+- [x] Provide useful diagnostic logs and a compact diagnostic status view.
 
 Deliverables:
 
@@ -524,6 +532,12 @@ Done when:
 - A configured shortcut changes the firmware layer and receives the resulting state over USB and Bluetooth.
 - Startup order, sleep, disconnect, and transport switching recover automatically.
 
+Completion evidence: the real G502 `F23` shortcut selected and released Navigation over both USB and Bluetooth, with one press and repeated lease renewals while
+held. A running companion switched from lost USB to Bluetooth, and a companion launched with both transports unavailable remained alive with capped exponential
+backoff before discovering USB without an app restart. Physical sleep remains explicitly deferred because this Windows 11 PC does not sleep reliably; transport
+loss, radio loss, startup order, keyboard availability, and reconnect behavior are covered by physical and automated tests. See
+[Custom Firmware/BuildSupport/STEP13_HEADLESS_COMPANION.md](Custom%20Firmware/BuildSupport/STEP13_HEADLESS_COMPANION.md).
+
 Depends on: Steps 10 and 12.
 
 ## Step 14: Add configuration and the Windows widget
@@ -532,25 +546,28 @@ Goal: present the stable companion state as a simple Windows experience.
 
 Work:
 
-- [ ] Build the WPF configuration surface for shortcut/action mappings.
-- [ ] Build a focusless taskbar-adjacent widget.
-- [ ] Display the active layer as the primary value.
-- [ ] Display connected, disconnected, and stale states clearly.
-- [ ] Add left/right battery values only if Step 11 passed.
-- [ ] Add optional start-with-Windows behavior.
+- [x] Build the WPF configuration surface for shortcut/action mappings.
+- [x] Build a focusless widget parented directly to the Windows 11 taskbar.
+- [x] Display the active layer as the primary value.
+- [x] Display connected, disconnected, and stale states clearly.
+- [x] Add left/right battery values after the Step 11 gate passed.
+- [x] Add optional start-with-Windows behavior with settings initially closed.
 - [ ] Test DPI scaling, multiple monitors, taskbar movement, taskbar auto-hide, Explorer restart, Windows sleep, and no-focus-stealing behavior.
-- [ ] Keep presentation separated from companion state so fake state can drive UI tests.
+- [x] Keep presentation separated from companion state so fake state can drive UI tests.
 
 Deliverables:
 
 - WPF companion configuration UI.
-- Taskbar-adjacent widget.
+- Taskbar-child status widget.
 - UI tests and manual Windows layout checks.
 
 Done when:
 
 - Ordinary use requires no diagnostic console or development commands.
 - The widget always distinguishes current, stale, and disconnected information.
+
+Implementation and acceptance evidence is recorded in
+[Custom Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md](Custom%20Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md).
 
 Depends on: Step 13 and the decision from Step 11.
 

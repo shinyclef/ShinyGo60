@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ShinyGo60.Companion.Core\ShinyGo60.Companion.Core.csproj" />
+    <ProjectReference Include="..\ShinyGo60.Platform.Windows\ShinyGo60.Platform.Windows.csproj" />
     <ProjectReference Include="..\ShinyGo60.Protocol\ShinyGo60.Protocol.csproj" />
   </ItemGroup>
 

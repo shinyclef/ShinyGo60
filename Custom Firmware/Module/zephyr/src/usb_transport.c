@@ -4,12 +4,17 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/init.h>
+#include <zephyr/kernel.h>
 #include <zephyr/sys/ring_buffer.h>
 #include <zephyr/sys/util.h>
+
+#include <zmk/event_manager.h>
+#include <zmk/events/usb_conn_state_changed.h>
 
 #include <shinygo60/protocol.h>
 
 #define USB_UART_NODE DT_CHOSEN(zmk_studio_rpc_uart)
+#define USB_REQUEST_QUEUE_DEPTH 4U
 #define USB_TX_BUFFER_SIZE (SHINYGO60_PACKET_SIZE * 4U)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(USB_UART_NODE, okay), "The ShinyGo60 USB CDC UART is unavailable");
@@ -26,9 +31,14 @@ static const uint8_t packet_magic[] = {
 
 RING_BUF_DECLARE(usb_tx_buffer, USB_TX_BUFFER_SIZE);
 static struct k_spinlock usb_tx_lock;
+K_MSGQ_DEFINE(
+    usb_request_queue, SHINYGO60_PACKET_SIZE, USB_REQUEST_QUEUE_DEPTH, sizeof(uint32_t));
 
 static uint8_t usb_request[SHINYGO60_PACKET_SIZE];
 static size_t usb_request_length;
+
+static void process_requests_work_handler(struct k_work *work);
+static K_WORK_DEFINE(process_requests_work, process_requests_work_handler);
 
 static void reset_request(uint8_t byte)
 {
@@ -51,13 +61,25 @@ static void receive_byte(uint8_t byte)
         return;
     }
 
-    uint8_t response[SHINYGO60_PACKET_SIZE];
-    if (shinygo60_protocol_handle(
-            SHINYGO60_TRANSPORT_USB, usb_request, usb_request_length, response)) {
-        (void)shinygo60_usb_send(response);
+    if (k_msgq_put(&usb_request_queue, usb_request, K_NO_WAIT) == 0) {
+        (void)k_work_submit(&process_requests_work);
     }
 
     usb_request_length = 0U;
+}
+
+static void process_requests_work_handler(struct k_work *work)
+{
+    ARG_UNUSED(work);
+
+    uint8_t request[SHINYGO60_PACKET_SIZE];
+    while (k_msgq_get(&usb_request_queue, request, K_NO_WAIT) == 0) {
+        uint8_t response[SHINYGO60_PACKET_SIZE];
+        if (shinygo60_protocol_handle(
+                SHINYGO60_TRANSPORT_USB, request, sizeof(request), response)) {
+            (void)shinygo60_usb_send(response);
+        }
+    }
 }
 
 static void usb_uart_callback(const struct device *device, void *user_data)
@@ -112,6 +134,19 @@ bool shinygo60_usb_send(const uint8_t packet[SHINYGO60_PACKET_SIZE])
     }
     return queued;
 }
+
+static int usb_connection_changed_listener(const zmk_event_t *event)
+{
+    const struct zmk_usb_conn_state_changed *changed = as_zmk_usb_conn_state_changed(event);
+    if (changed != NULL && changed->conn_state != ZMK_USB_CONN_HID) {
+        shinygo60_protocol_transport_disconnected(SHINYGO60_TRANSPORT_USB);
+    }
+
+    return ZMK_EV_EVENT_BUBBLE;
+}
+
+ZMK_LISTENER(shinygo60_usb_connection, usb_connection_changed_listener);
+ZMK_SUBSCRIPTION(shinygo60_usb_connection, zmk_usb_conn_state_changed);
 
 static int shinygo60_usb_initialize(void)
 {

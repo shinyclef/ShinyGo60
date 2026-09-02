@@ -92,6 +92,7 @@ public sealed class LayerStateTracker
         {
             ProtocolMessage.StateSnapshot snapshot => this.ApplyState(snapshot.SessionId, snapshot.State, isSnapshot: true),
             ProtocolMessage.LayerChanged changed => this.ApplyState(changed.SessionId, changed.State, isSnapshot: false),
+            ProtocolMessage.CommandResult result => this.ApplyState(result.SessionId, result.State, isSnapshot: false),
             _ => throw new ArgumentException($"Message type {message.Type} does not contain layer telemetry.", nameof(message)),
         };
     }

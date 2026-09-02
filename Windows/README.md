@@ -10,7 +10,8 @@ This workspace contains the Windows 11 tooling and shared application contracts:
 | `ShinyGo60.BuildTool` | Command-line entry point for one explicit keymap-to-UF2 build |
 | `ShinyGo60.Builder` | WPF shell for the eventual double-click firmware builder |
 | `ShinyGo60.Companion.Core` | Connection sessions, manifest-backed layer/battery state, reconnect policy, and shortcut contracts |
-| `ShinyGo60.Companion` | WPF shell for configuration and the eventual taskbar-adjacent widget |
+| `ShinyGo60.Platform.Windows` | Windows 11 USB/Bluetooth transports, global shortcut capture, startup registration, and taskbar hosting |
+| `ShinyGo60.Companion` | WPF configuration application and focusless taskbar status widget |
 | `ShinyGo60.Tests` | Offline contract checks, parser fixtures, protocol vectors, and fake external boundaries |
 | `ShinyGo60.TransportSpike` | USB/Bluetooth layer/battery snapshot and live-event diagnostic client |
 
@@ -41,6 +42,41 @@ Use `usb`, `bluetooth`, or `switch` instead of `both` to isolate one path or tes
 Watch resolved layer names and per-half battery state live with `watch-usb 240` or `watch-bluetooth 240` instead of `both 5`. Step 11 adds independent fresh,
 stale, and unavailable battery readings while leaving all layer-control commands disabled. See
 [`../Custom Firmware/BuildSupport/STEP11_BATTERY_FEASIBILITY.md`](../Custom%20Firmware/BuildSupport/STEP11_BATTERY_FEASIBILITY.md).
+
+After flashing a matching Step 12 build, run the bounded persistent/momentary control diagnostic over one transport at a time. The final argument is a
+non-default layer ID; layer 3 is `Navigation` in the current manifest:
+
+```powershell
+dotnet run --project '.\Windows\ShinyGo60.TransportSpike\ShinyGo60.TransportSpike.csproj' --configuration Release -- `
+    '.\Output\ShinyGo60-20260902-090655-3fd12c2c\layout-manifest.json' control-usb 3
+```
+
+Use `control-bluetooth 3` for Bluetooth. The diagnostic tests persistent selection/replacement, exact replay, momentary press/renew/release, and firmware lease
+expiry, simultaneous owners, and session replacement. `control-switch 3` verifies held-state cleanup in both USB/Bluetooth handoff directions. Use `select-usb`
+or `select-bluetooth` plus a layer ID to leave a runtime-persistent layer selected; layer ID 0 restores Home. The control diagnostic restores persistent Home
+before testing momentary commands, and it attempts an emergency Home restore if the persistent phase is interrupted. `hold-usb` and `hold-bluetooth` maintain a
+leased activation without replacing the current persistent selection for deliberate interruption and reboot tests. See
+[`../Custom Firmware/BuildSupport/STEP12_LAYER_CONTROL.md`](../Custom%20Firmware/BuildSupport/STEP12_LAYER_CONTROL.md).
+
+Run the Step 13 companion diagnostic with the manifest from the flashed firmware and a settings file. The checked-in example maps the real G502 `F23` input to
+a momentary Navigation layer and prefers USB before Bluetooth:
+
+```powershell
+dotnet run --no-build --project '.\Windows\ShinyGo60.Companion\ShinyGo60.Companion.csproj' --configuration Release -- `
+    '.\Output\ShinyGo60-20260902-090655-3fd12c2c\layout-manifest.json' `
+    '.\Windows\companion-settings.example.json'
+```
+
+The app validates both files before installing its global shortcut hook. It displays the active transport, resolved layer ownership, per-half batteries, latest
+shortcut route, reconnect detail, and log path. Daily JSON-lines diagnostics are appended under `%LOCALAPPDATA%\ShinyGo60\Logs`. A manual re-scan releases any
+live momentary actions when possible, then starts automatic discovery from USB. Firmware leases remain the final safety bound if a transport has already failed.
+See [`../Custom Firmware/BuildSupport/STEP13_HEADLESS_COMPANION.md`](../Custom%20Firmware/BuildSupport/STEP13_HEADLESS_COMPANION.md).
+
+The Step 14 companion edits shortcut mappings, applies changes without restarting, and optionally registers an exact background command under the current
+user's Windows startup key. Its status widget is a child of the Windows 11 `Shell_TrayWnd`, not a topmost screen overlay. The taskbar therefore owns fullscreen
+visibility and z-order. A one-second maintenance check only detects Explorer replacement and reapplies taskbar-relative placement; status updates remain
+event-driven. No driver, administrator access, hardware-monitor library, or high-frequency fullscreen polling is used.
+See [`../Custom Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md`](../Custom%20Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md).
 
 Step 9 locks the 20-byte protocol-v1 frame, layout negotiation, session ownership, layer-state messages, leased momentary commands, and structured errors. Step 11
 extends that fixed frame to protocol 1.1; the firmware and C# codecs consume the same fourteen golden byte vectors. See
