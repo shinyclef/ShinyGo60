@@ -9,7 +9,7 @@
 #define SHINYGO60_PACKET_MAGIC_0 0x53U
 #define SHINYGO60_PACKET_MAGIC_1 0x47U
 #define SHINYGO60_PROTOCOL_MAJOR 1U
-#define SHINYGO60_PROTOCOL_MINOR 0U
+#define SHINYGO60_PROTOCOL_MINOR 1U
 #define SHINYGO60_PROTOCOL_VERSION ((SHINYGO60_PROTOCOL_MAJOR << 4U) | SHINYGO60_PROTOCOL_MINOR)
 #define SHINYGO60_NO_LAYER UINT8_MAX
 #define SHINYGO60_MAXIMUM_LEASE_UNITS 50U
@@ -22,6 +22,9 @@ enum shinygo60_message_type {
     SHINYGO60_MESSAGE_GET_STATE = 0x03,
     SHINYGO60_MESSAGE_STATE_SNAPSHOT = 0x04,
     SHINYGO60_MESSAGE_LAYER_CHANGED = 0x05,
+    SHINYGO60_MESSAGE_GET_BATTERY = 0x06,
+    SHINYGO60_MESSAGE_BATTERY_SNAPSHOT = 0x07,
+    SHINYGO60_MESSAGE_BATTERY_CHANGED = 0x08,
     SHINYGO60_MESSAGE_SET_PERSISTENT_LAYER = 0x10,
     SHINYGO60_MESSAGE_PRESS_MOMENTARY_LAYER = 0x11,
     SHINYGO60_MESSAGE_RENEW_MOMENTARY_LAYER = 0x12,
@@ -46,6 +49,18 @@ enum shinygo60_hello_status {
 enum shinygo60_layer_state_indicator {
     SHINYGO60_LAYER_STATE_PERSISTENT_ACTIVE = 1U << 0,
     SHINYGO60_LAYER_STATE_MOMENTARY_ACTIVE = 1U << 1,
+};
+
+enum shinygo60_battery_state_indicator {
+    SHINYGO60_BATTERY_LEFT_AVAILABLE = 1U << 0,
+    SHINYGO60_BATTERY_LEFT_STALE = 1U << 1,
+    SHINYGO60_BATTERY_RIGHT_AVAILABLE = 1U << 2,
+    SHINYGO60_BATTERY_RIGHT_STALE = 1U << 3,
+};
+
+enum shinygo60_battery_half {
+    SHINYGO60_BATTERY_HALF_LEFT,
+    SHINYGO60_BATTERY_HALF_RIGHT,
 };
 
 enum shinygo60_command_status {
@@ -94,6 +109,13 @@ struct shinygo60_layer_state {
     uint8_t indicators;
 };
 
+struct shinygo60_battery_state {
+    uint32_t revision;
+    uint8_t left_level;
+    uint8_t right_level;
+    uint8_t indicators;
+};
+
 struct shinygo60_message {
     enum shinygo60_message_type type;
     union {
@@ -115,9 +137,18 @@ struct shinygo60_message {
         } get_state;
         struct {
             uint32_t session_id;
+            uint32_t request_id;
+        } get_battery;
+        struct {
+            uint32_t session_id;
             uint32_t related_id;
             struct shinygo60_layer_state state;
         } state;
+        struct {
+            uint32_t session_id;
+            uint32_t related_id;
+            struct shinygo60_battery_state state;
+        } battery;
         struct {
             uint32_t session_id;
             uint32_t command_id;
@@ -161,6 +192,11 @@ bool shinygo60_protocol_handle(
     uint8_t response[SHINYGO60_PACKET_SIZE]);
 
 void shinygo60_protocol_observe_effective_layer(uint8_t effective_layer);
+
+void shinygo60_protocol_observe_battery(
+    enum shinygo60_battery_half half, uint8_t level, bool available, bool stale);
+
+void shinygo60_battery_telemetry_refresh(void);
 
 void shinygo60_protocol_transport_disconnected(enum shinygo60_transport transport);
 

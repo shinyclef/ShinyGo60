@@ -9,4 +9,5 @@ side-specific files are diagnostic evidence and are not separate files that the 
 
 The left/central build enables the pinned `studio-rpc-usb-uart` snippet to supply the composite CDC/ACM device-tree node and serial settings used by the ShinyGo60
 Step 6 transport. The shared Kconfig explicitly keeps physical `UART0` asynchronous so the snippet's global interrupt setting cannot disable Go60's TRRS wired
-split. The right/peripheral build does not enable the snippet or compile ShinyGo60 runtime code.
+split. The right/peripheral build does not enable the snippet or compile host-facing ShinyGo60 protocol code; Step 11 compiles only the cached-battery heartbeat
+shared by both halves.

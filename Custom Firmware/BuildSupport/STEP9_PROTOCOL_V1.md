@@ -1,5 +1,8 @@
 # Step 9 protocol v1
 
+> Historical Step 9 record. Step 11 extends the current fixed-frame protocol to version 1.1 with gated per-half battery telemetry; see
+> [STEP11_BATTERY_FEASIBILITY.md](STEP11_BATTERY_FEASIBILITY.md).
+
 Status: complete; software vectors, firmware build, flash, normal HID, TRRS, USB, Bluetooth, and transport switching passed
 
 Recorded: 2026-09-02 on Windows 11

@@ -128,7 +128,7 @@ internal static class KeymapInspectionTests
             !string.Equals(firstIdentifier, reorderedIdentifier, StringComparison.Ordinal),
             "Reordering layers should change the layout identifier.");
 
-        string nextProtocolIdentifier = LayoutIdentity.Create(new ProtocolVersion(1, 1), first.SourceBytes.Span);
+        string nextProtocolIdentifier = LayoutIdentity.Create(new ProtocolVersion(1, 2), first.SourceBytes.Span);
         AssertEx.True(
             !string.Equals(firstIdentifier, nextProtocolIdentifier, StringComparison.Ordinal),
             "Changing the protocol version should change the layout identifier.");

@@ -57,6 +57,19 @@ public static class ProtocolPacketCodec
                 RequireNonZero(changed.SessionId, nameof(changed.SessionId));
                 WriteLayerState(payload, changed.SessionId, changed.SourceCommandId, changed.State);
                 break;
+            case ProtocolMessage.GetBatteryRequest getBattery:
+                RequireSessionAndId(getBattery.SessionId, getBattery.RequestId);
+                BinaryPrimitives.WriteUInt32LittleEndian(payload, getBattery.SessionId);
+                BinaryPrimitives.WriteUInt32LittleEndian(payload[4..], getBattery.RequestId);
+                break;
+            case ProtocolMessage.BatterySnapshot snapshot:
+                RequireSessionAndId(snapshot.SessionId, snapshot.RequestId);
+                WriteBatteryState(payload, snapshot.SessionId, snapshot.RequestId, snapshot.State);
+                break;
+            case ProtocolMessage.BatteryChanged changed:
+                RequireNonZero(changed.SessionId, nameof(changed.SessionId));
+                WriteBatteryState(payload, changed.SessionId, 0, changed.State);
+                break;
             case ProtocolMessage.SetPersistentLayerCommand command:
                 ValidateLayerCommand(command.SessionId, command.CommandId, command.ExpectedStateRevision, command.LayerId);
                 WriteLayerCommand(payload, command.SessionId, command.CommandId, command.ExpectedStateRevision, command.LayerId);
@@ -127,6 +140,9 @@ public static class ProtocolPacketCodec
             ProtocolMessageType.GetState => TryDecodeGetState(payload, out message),
             ProtocolMessageType.StateSnapshot => TryDecodeState(payload, isEvent: false, out message),
             ProtocolMessageType.LayerChanged => TryDecodeState(payload, isEvent: true, out message),
+            ProtocolMessageType.GetBattery => TryDecodeGetBattery(payload, out message),
+            ProtocolMessageType.BatterySnapshot => TryDecodeBattery(payload, isEvent: false, out message),
+            ProtocolMessageType.BatteryChanged => TryDecodeBattery(payload, isEvent: true, out message),
             ProtocolMessageType.SetPersistentLayer => TryDecodeSetPersistent(payload, out message),
             ProtocolMessageType.PressMomentaryLayer => TryDecodePressMomentary(payload, out message),
             ProtocolMessageType.RenewMomentaryLayer => TryDecodeRenewMomentary(payload, out message),
@@ -219,6 +235,43 @@ public static class ProtocolPacketCodec
         message = isEvent
             ? new ProtocolMessage.LayerChanged(sessionId, relatedId, state)
             : new ProtocolMessage.StateSnapshot(sessionId, relatedId, state);
+        return true;
+    }
+
+    private static bool TryDecodeGetBattery(ReadOnlySpan<byte> payload, out ProtocolMessage? message)
+    {
+        uint sessionId = BinaryPrimitives.ReadUInt32LittleEndian(payload);
+        uint requestId = BinaryPrimitives.ReadUInt32LittleEndian(payload[4..]);
+        if (sessionId == 0 || requestId == 0 || !IsZero(payload[8..]))
+        {
+            message = null;
+            return false;
+        }
+
+        message = new ProtocolMessage.GetBatteryRequest(sessionId, requestId);
+        return true;
+    }
+
+    private static bool TryDecodeBattery(ReadOnlySpan<byte> payload, bool isEvent, out ProtocolMessage? message)
+    {
+        uint sessionId = BinaryPrimitives.ReadUInt32LittleEndian(payload);
+        uint revision = BinaryPrimitives.ReadUInt32LittleEndian(payload[4..]);
+        uint relatedId = BinaryPrimitives.ReadUInt32LittleEndian(payload[8..]);
+        ProtocolMessage.BatteryState state = new(
+            revision,
+            payload[12],
+            payload[13],
+            (BatteryStateIndicators)payload[14]);
+        bool relatedIdIsValid = isEvent ? relatedId == 0 : relatedId != 0;
+        if (sessionId == 0 || !relatedIdIsValid || payload[15] != 0 || !IsValidBatteryState(state))
+        {
+            message = null;
+            return false;
+        }
+
+        message = isEvent
+            ? new ProtocolMessage.BatteryChanged(sessionId, state)
+            : new ProtocolMessage.BatterySnapshot(sessionId, relatedId, state);
         return true;
     }
 
@@ -358,6 +411,21 @@ public static class ProtocolPacketCodec
         payload[15] = (byte)state.Indicators;
     }
 
+    private static void WriteBatteryState(
+        Span<byte> payload,
+        uint sessionId,
+        uint relatedId,
+        ProtocolMessage.BatteryState state)
+    {
+        ValidateBatteryState(state);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload, sessionId);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload[4..], state.Revision);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload[8..], relatedId);
+        payload[12] = state.LeftLevel;
+        payload[13] = state.RightLevel;
+        payload[14] = (byte)state.Indicators;
+    }
+
     private static void WriteLayerCommand(Span<byte> payload, uint sessionId, uint commandId, uint revision, byte layerId)
     {
         BinaryPrimitives.WriteUInt32LittleEndian(payload, sessionId);
@@ -411,6 +479,36 @@ public static class ProtocolPacketCodec
             (state.Indicators & ~knownIndicators) == 0 &&
             state.PersistentLayerId.HasValue == state.Indicators.HasFlag(LayerStateIndicators.PersistentLayerActive) &&
             (state.MomentaryLayerCount > 0) == state.Indicators.HasFlag(LayerStateIndicators.MomentaryLayerActive);
+    }
+
+    private static void ValidateBatteryState(ProtocolMessage.BatteryState state)
+    {
+        if (!IsValidBatteryState(state))
+        {
+            throw new ArgumentException("The battery state contains an invalid revision, level, or indicator combination.", nameof(state));
+        }
+    }
+
+    private static bool IsValidBatteryState(ProtocolMessage.BatteryState state)
+    {
+        BatteryStateIndicators knownIndicators =
+            BatteryStateIndicators.LeftAvailable |
+            BatteryStateIndicators.LeftStale |
+            BatteryStateIndicators.RightAvailable |
+            BatteryStateIndicators.RightStale;
+        bool leftAvailable = state.Indicators.HasFlag(BatteryStateIndicators.LeftAvailable);
+        bool leftStale = state.Indicators.HasFlag(BatteryStateIndicators.LeftStale);
+        bool rightAvailable = state.Indicators.HasFlag(BatteryStateIndicators.RightAvailable);
+        bool rightStale = state.Indicators.HasFlag(BatteryStateIndicators.RightStale);
+        bool leftLevelIsValid = leftAvailable ? state.LeftLevel <= 100 : state.LeftLevel == 0;
+        bool rightLevelIsValid = rightAvailable ? state.RightLevel <= 100 : state.RightLevel == 0;
+
+        return state.Revision != 0 &&
+            (state.Indicators & ~knownIndicators) == 0 &&
+            (!leftStale || leftAvailable) &&
+            (!rightStale || rightAvailable) &&
+            leftLevelIsValid &&
+            rightLevelIsValid;
     }
 
     private static void ValidateLease(byte leaseUnits)

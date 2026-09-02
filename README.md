@@ -190,11 +190,14 @@ source; `Custom Firmware/Generated`, `Output`, `bin`, and `obj` are disposable a
 
 ## Current status
 
-The project has completed the protocol-v1 implementation, headless keymap-to-UF2 pipeline, and Step 10 telemetry software. The Step 9 UF2 passes its flash, normal
+The project has completed the protocol-v1 implementation, headless keymap-to-UF2 pipeline, Step 10 layer telemetry, and Step 11 per-half battery feasibility.
+The Step 9 UF2 passes its flash, normal
 HID, TRRS, dedicated USB, dedicated Bluetooth, and USB-to-Bluetooth-to-USB handshake checks. The Step 10 UF2 retains normal USB HID and TRRS operation, and its
 manifest-bound snapshots and live effective-layer telemetry pass over both USB and Bluetooth, including USB convergence after a coalesced update. Active-layer
 reconnect, Bluetooth-to-USB-to-Bluetooth-to-USB convergence, wireless-split input, right-half layer activation, transparent-key behavior, and post-sleep sessions
-also pass. The input keymap has no conditional layer. The repository currently contains:
+also pass. The input keymap has no conditional layer. Protocol 1.1 and the matched Step 11 UF2 report independent fresh, stale, or unavailable battery state for
+both halves without extra voltage samples. Battery-powered Bluetooth accuracy, wireless/TRRS split modes, USB transport, missing-half handling, reconnects, and
+active heartbeat behavior pass. USB-powered readings may stably saturate at 100% and Windows sleep/resume is explicitly deferred. The repository currently contains:
 
 - The active MoErgo-exported `.keymap` for the first build fixture.
 - A MoErgo Layout Editor JSON snapshot, retained as a reference rather than a version-one build input.
@@ -208,8 +211,9 @@ also pass. The input keymap has no conditional layer. The repository currently c
 - A command-line build tool with clean workspaces, pinned Docker metadata verification, structural and identity-aware UF2 validation, atomic matched outputs, and
   cancellation cleanup.
 - An out-of-tree ZMK module with central-only USB CDC/ACM and bonded, encrypted Bluetooth GATT transports included through the supported MoErgo build hook.
-- Matching native C and C# protocol-v1 codecs driven by the same eleven golden byte vectors.
-- A read-only central layer observer and C# state tracker that validates the matching manifest, converges across revision gaps, and resolves IDs to layer names.
+- Matching native C and C# protocol-v1.1 codecs driven by the same fourteen golden byte vectors.
+- Read-only central layer and battery observers plus manifest-bound C# trackers that converge across revision gaps, resolve layer IDs, and distinguish fresh,
+  stale, and unavailable per-half battery readings.
 
 The baseline UF2 has passed reproducible build, structural validation, and an initial hardware flash test. Its exact pins, hashes, measurements, and remaining
 regression checklist are recorded in [Custom Firmware/BuildSupport/BASELINE_V25_11.md](Custom%20Firmware/BuildSupport/BASELINE_V25_11.md).
@@ -254,6 +258,12 @@ remain disabled. The software checks and pinned offline firmware build pass. Phy
 transport switching, normal HID, TRRS and wireless inter-half operation, transparent-key behavior, and sleep/resume convergence all pass. Step 10 is complete;
 evidence and the checklist are recorded in
 [Custom Firmware/BuildSupport/STEP10_LAYER_TELEMETRY.md](Custom%20Firmware/BuildSupport/STEP10_LAYER_TELEMETRY.md).
+
+Step 11 extends the fixed frame to protocol 1.1 with separate left/right battery snapshots and change events. Both halves re-publish ZMK's cached value once per
+active minute, wireless split explicitly refreshes the right Battery Service notification, and values become stale after 150 seconds of silence. It adds no
+sensor sampling. Software, pinned offline firmware, and the required physical Bluetooth/wireless/TRRS/USB/missing-half/reconnect checks pass, so battery support
+is retained for version one. Windows sleep/resume is deferred because the test PC does not sleep reliably. Evidence and the completed gate are recorded in
+[Custom Firmware/BuildSupport/STEP11_BATTERY_FEASIBILITY.md](Custom%20Firmware/BuildSupport/STEP11_BATTERY_FEASIBILITY.md).
 
 The graphical one-click wrapper and production companion behavior have not yet been implemented. Step 4 scaffold evidence is recorded in
 [Custom Firmware/BuildSupport/STEP4_SCAFFOLD.md](Custom%20Firmware/BuildSupport/STEP4_SCAFFOLD.md).

@@ -1,6 +1,6 @@
 # ShinyGo60 Development Plan
 
-Status: Step 10 complete; Step 11 battery feasibility is next
+Status: Step 11 complete; Step 12 persistent and momentary layer control is next
 
 Last updated: 2026-09-02
 
@@ -433,12 +433,15 @@ Goal: retain battery features only if both halves can be reported reliably.
 
 Work:
 
-- [ ] Read left and right values distinctly at the central.
-- [ ] Test wireless inter-half and TRRS inter-half operation.
-- [ ] Test charging, a missing or powered-off right half, stale readings, reconnects, and keyboard sleep.
-- [ ] Measure useful update frequency and added power cost.
-- [ ] Define how unavailable or stale values are represented if the feasibility test passes.
-- [ ] If any required behavior fails, remove battery fields and UI plans completely.
+- [x] Read left and right values distinctly at the central.
+- [x] Test wireless inter-half and TRRS inter-half operation.
+- [x] Test USB-powered behavior, a missing or powered-off right half, stale readings, and reconnects. Accurate charging values are outside the required Bluetooth
+  scope.
+- [ ] Test battery convergence after Windows sleep. Explicitly deferred because the test PC does not sleep reliably; the equivalent Step 10 transport/session test
+  passed.
+- [x] Measure useful update frequency and bound the added power cost.
+- [x] Define how unavailable or stale values are represented if the feasibility test passes.
+- [x] Retain battery fields and UI plans after the required feasibility behavior passes.
 
 Deliverables:
 
@@ -448,6 +451,15 @@ Deliverables:
 Done when:
 
 - Both readings are proven accurate, distinguishable, timely, and affordable in power use; or no battery feature remains in version-one scope.
+
+Step 11 completed on 2026-09-02. Protocol 1.1 adds separate revisioned left/right battery snapshots and events with explicit fresh, stale, and unavailable states.
+Both halves re-publish only ZMK's cached reading once per active minute; the right additionally refreshes its existing Bluetooth Battery Service notification,
+while no extra voltage samples are taken. The Windows solution, ten offline suites, fourteen shared native/C# vectors, and a pinned network-disabled firmware build
+pass. Physical tests passed battery-powered Bluetooth accuracy, wireless and TRRS split modes, USB transport, missing/silent right-half handling, stale-to-fresh
+recovery, reconnects, and active heartbeat behavior. USB-powered sensors stably saturate at 100%, which is accepted because accuracy is required only in
+battery-powered Bluetooth mode. Windows sleep/resume is explicitly deferred because the test PC does not sleep reliably; Step 10 already passed the equivalent
+transport/session path. Design, measurements, artifact identity, observations, and the checklist are recorded in
+[Custom Firmware/BuildSupport/STEP11_BATTERY_FEASIBILITY.md](Custom%20Firmware/BuildSupport/STEP11_BATTERY_FEASIBILITY.md).
 
 Depends on: Steps 6 and 9. May run in parallel with Step 10.
 

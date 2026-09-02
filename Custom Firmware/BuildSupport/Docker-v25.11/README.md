@@ -38,10 +38,20 @@ The image is pinned to:
 - Step 8 reconstruction image ID `sha256:efc1cd8775ef49246130c2841cc06638f3e243caffd29c3d587292423706bb41`.
 - Step 9 reconstruction image ID `sha256:71f0923c8cbc49c18bcf5f8d168e24f9e0cc0cee087d61e8213242a4ec6d09b6`.
 - Step 10 reconstruction image ID `sha256:dc4e878897c99fd48172dbb5ff32ee85f38649214d92e27a328aae7b8cbeac9a`.
+- Step 11 reconstruction image ID `sha256:672e5a87f2eebbd85bcb4cd5c1f16d1b00badbe56bfbb34a4b76f2ba1618724b`.
 
 Local image IDs are evidence for their exact constructions. They can vary with BuildKit export metadata even when the pinned base, Dockerfile, build context, and
 ZMK source are unchanged. The C# pipeline therefore validates and logs the managed role, ZMK tag, exact source commit, and current local ID. A registry digest must
 be recorded separately when the prebuilt release image is published.
+
+## Persistence across Windows restarts
+
+A normal Docker Desktop or Windows restart does not remove the tagged image. Keep Docker Desktop's containerd image-store setting unchanged: switching image
+stores can make the other store's images invisible. Avoid Docker Desktop's Clean/Purge data action and global `docker system prune -a`, both of which can remove
+the retained image. The project's scoped cleanup preserves it unless `-IncludeImage` is explicitly supplied.
+
+Check the retained image with `docker image inspect shinygo60-builder:v25.11`. If it is genuinely absent, rerun `Build-Image.ps1`; Docker does not keep a reliable
+audit identifying which earlier cleanup action removed an image.
 
 ## Scoped cleanup
 

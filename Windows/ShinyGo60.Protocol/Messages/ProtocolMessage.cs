@@ -25,6 +25,15 @@ public abstract record ProtocolMessage(ProtocolMessageType Type)
     public sealed record LayerChanged(uint SessionId, uint SourceCommandId, LayerState State)
         : ProtocolMessage(ProtocolMessageType.LayerChanged);
 
+    public sealed record GetBatteryRequest(uint SessionId, uint RequestId)
+        : ProtocolMessage(ProtocolMessageType.GetBattery);
+
+    public sealed record BatterySnapshot(uint SessionId, uint RequestId, BatteryState State)
+        : ProtocolMessage(ProtocolMessageType.BatterySnapshot);
+
+    public sealed record BatteryChanged(uint SessionId, BatteryState State)
+        : ProtocolMessage(ProtocolMessageType.BatteryChanged);
+
     public sealed record SetPersistentLayerCommand(
         uint SessionId,
         uint CommandId,
@@ -72,4 +81,10 @@ public abstract record ProtocolMessage(ProtocolMessageType Type)
         byte? PersistentLayerId,
         byte MomentaryLayerCount,
         LayerStateIndicators Indicators);
+
+    public readonly record struct BatteryState(
+        uint Revision,
+        byte LeftLevel,
+        byte RightLevel,
+        BatteryStateIndicators Indicators);
 }

@@ -227,7 +227,7 @@ internal sealed class BluetoothGattKeyboardTransport : IKeyboardTransport
     private void DispatchPacket(ReadOnlyMemory<byte> packet)
     {
         if (ProtocolPacketCodec.TryReadHeader(packet.Span, out _, out ProtocolMessageType type) &&
-            type == ProtocolMessageType.LayerChanged)
+            type is ProtocolMessageType.LayerChanged or ProtocolMessageType.BatteryChanged)
         {
             this.PacketReceived?.Invoke(this, new KeyboardPacketReceivedEventArgs(packet));
             return;

@@ -26,14 +26,29 @@ internal static class ProtocolCodecTests
             1,
             LayerStateIndicators.PersistentLayerActive | LayerStateIndicators.MomentaryLayerActive);
         ProtocolMessage.LayerState resultState = new(43, 4, 4, 0, LayerStateIndicators.PersistentLayerActive);
+        ProtocolMessage.BatteryState batterySnapshotState = new(
+            44,
+            87,
+            63,
+            BatteryStateIndicators.LeftAvailable | BatteryStateIndicators.RightAvailable);
+        ProtocolMessage.BatteryState batteryChangedState = new(
+            45,
+            86,
+            63,
+            BatteryStateIndicators.LeftAvailable |
+            BatteryStateIndicators.RightAvailable |
+            BatteryStateIndicators.RightStale);
 
         (string FileName, ProtocolMessage Message)[] vectors =
         [
-            ("hello-request.bytes", new ProtocolMessage.HelloRequest(0x1234, (ProtocolCapability)0x07, Layout)),
-            ("hello-result.bytes", new ProtocolMessage.HelloResult(0x1234, HelloStatus.Success, (ProtocolCapability)0x07, 0x89ABCDEF, Layout)),
+            ("hello-request.bytes", new ProtocolMessage.HelloRequest(0x1234, (ProtocolCapability)0x0F, Layout)),
+            ("hello-result.bytes", new ProtocolMessage.HelloResult(0x1234, HelloStatus.Success, (ProtocolCapability)0x0F, 0x89ABCDEF, Layout)),
             ("get-state.bytes", new ProtocolMessage.GetStateRequest(0x89ABCDEF, 0x01020304)),
             ("state-snapshot.bytes", new ProtocolMessage.StateSnapshot(0x89ABCDEF, 0x01020304, snapshotState)),
             ("layer-changed.bytes", new ProtocolMessage.LayerChanged(0x89ABCDEF, 0x11223344, changedState)),
+            ("get-battery.bytes", new ProtocolMessage.GetBatteryRequest(0x89ABCDEF, 0x01020305)),
+            ("battery-snapshot.bytes", new ProtocolMessage.BatterySnapshot(0x89ABCDEF, 0x01020305, batterySnapshotState)),
+            ("battery-changed.bytes", new ProtocolMessage.BatteryChanged(0x89ABCDEF, batteryChangedState)),
             ("set-persistent-layer.bytes", new ProtocolMessage.SetPersistentLayerCommand(0x89ABCDEF, 0x11223344, 42, 4)),
             ("press-momentary-layer.bytes", new ProtocolMessage.PressMomentaryLayerCommand(0x89ABCDEF, 0x11223345, 43, 3, 20)),
             ("renew-momentary-layer.bytes", new ProtocolMessage.RenewMomentaryLayerCommand(0x89ABCDEF, 0x11223346, 0x11223345, 20)),
@@ -64,7 +79,7 @@ internal static class ProtocolCodecTests
         AssertRejected(wrongMagic, "A packet with incorrect magic should be rejected.");
 
         byte[] wrongVersion = (byte[])hello.Clone();
-        wrongVersion[2] = 0x11;
+        wrongVersion[2] = 0x10;
         AssertRejected(wrongVersion, "An unsupported version should be rejected.");
 
         byte[] unknownType = (byte[])hello.Clone();
@@ -92,6 +107,22 @@ internal static class ProtocolCodecTests
         byte[] inconsistentState = ReadVector("state-snapshot.bytes");
         inconsistentState[19] = (byte)LayerStateIndicators.PersistentLayerActive;
         AssertRejected(inconsistentState, "State presence indicators must match their fields.");
+
+        byte[] unknownBatteryIndicator = ReadVector("battery-snapshot.bytes");
+        unknownBatteryIndicator[18] = 0x10;
+        AssertRejected(unknownBatteryIndicator, "An unknown battery indicator should be rejected.");
+
+        byte[] invalidBatteryLevel = ReadVector("battery-snapshot.bytes");
+        invalidBatteryLevel[16] = 101;
+        AssertRejected(invalidBatteryLevel, "A battery level above 100 should be rejected.");
+
+        byte[] staleUnavailableBattery = ReadVector("battery-snapshot.bytes");
+        staleUnavailableBattery[18] = (byte)(BatteryStateIndicators.LeftAvailable | BatteryStateIndicators.RightStale);
+        AssertRejected(staleUnavailableBattery, "A stale battery must also be available.");
+
+        byte[] nonZeroBatteryReserved = ReadVector("battery-snapshot.bytes");
+        nonZeroBatteryReserved[19] = 1;
+        AssertRejected(nonZeroBatteryReserved, "A nonzero battery reserved field should be rejected.");
     }
 
     private static void VerifyEncodeBounds()
@@ -102,6 +133,11 @@ internal static class ProtocolCodecTests
             () => ProtocolPacketCodec.Encode(new ProtocolMessage.PressMomentaryLayerCommand(1, 1, 1, 1, 0)));
         AssertEx.Throws<ArgumentOutOfRangeException>(
             () => ProtocolPacketCodec.Encode(new ProtocolMessage.SetPersistentLayerCommand(1, 1, 1, ProtocolPacketCodec.NoLayer)));
+        AssertEx.Throws<ArgumentException>(
+            () => ProtocolPacketCodec.Encode(
+                new ProtocolMessage.BatteryChanged(
+                    1,
+                    new ProtocolMessage.BatteryState(1, 101, 0, BatteryStateIndicators.LeftAvailable))));
     }
 
     private static void AssertRejected(ReadOnlySpan<byte> packet, string message)

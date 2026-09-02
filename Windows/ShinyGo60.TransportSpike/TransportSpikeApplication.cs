@@ -44,7 +44,8 @@ internal static class TransportSpikeApplication
         LayoutManifest manifest)
     {
         await using IKeyboardTransport transport = CreateTransport(kind);
-        LayerStateTracker tracker = new(manifest);
+        LayerStateTracker layerTracker = new(manifest);
+        BatteryStateTracker batteryTracker = new(manifest);
         using CancellationTokenSource connectTimeout = new(options.Timeout);
 
         Console.WriteLine($"Connecting over {kind}...");
@@ -53,7 +54,7 @@ internal static class TransportSpikeApplication
 
         if (options.IsWatch)
         {
-            await WatchLayerChangesAsync(transport, tracker, manifest, options).ConfigureAwait(false);
+            await WatchTelemetryAsync(transport, layerTracker, batteryTracker, manifest, options).ConfigureAwait(false);
             await transport.DisconnectAsync().ConfigureAwait(false);
             return;
         }
@@ -64,7 +65,8 @@ internal static class TransportSpikeApplication
             using CancellationTokenSource exchangeTimeout = new(options.Timeout);
             SessionSnapshot result = await OpenTelemetrySessionAsync(
                     transport,
-                    tracker,
+                    layerTracker,
+                    batteryTracker,
                     manifest,
                     exchangeTimeout.Token)
                 .ConfigureAwait(false);
@@ -72,7 +74,9 @@ internal static class TransportSpikeApplication
 
             Console.WriteLine(
                 $"  Snapshot {exchange}: {result.Duration.TotalMilliseconds:F2} ms, session {result.SessionId:X8}, " +
-                $"revision {result.State.Revision}, layer {result.State.EffectiveLayer.Id} ({result.State.EffectiveLayer.Name})");
+                $"layer revision {result.LayerState.Revision}, layer {result.LayerState.EffectiveLayer.Id} " +
+                $"({result.LayerState.EffectiveLayer.Name}), battery revision {result.BatteryState.Revision}, " +
+                $"left {FormatBattery(result.BatteryState.Left)}, right {FormatBattery(result.BatteryState.Right)}");
         }
 
         await transport.DisconnectAsync().ConfigureAwait(false);
@@ -80,34 +84,40 @@ internal static class TransportSpikeApplication
         Console.WriteLine(
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"{kind} Hello+GetState summary: count={durations.Length}, min={durations.Min().TotalMilliseconds:F2} ms, " +
+                $"{kind} Hello+GetState+GetBattery summary: count={durations.Length}, " +
+                $"min={durations.Min().TotalMilliseconds:F2} ms, " +
                 $"mean={average:F2} ms, max={durations.Max().TotalMilliseconds:F2} ms"));
     }
 
-    private static async Task WatchLayerChangesAsync(
+    private static async Task WatchTelemetryAsync(
         IKeyboardTransport transport,
-        LayerStateTracker tracker,
+        LayerStateTracker layerTracker,
+        BatteryStateTracker batteryTracker,
         LayoutManifest manifest,
         SpikeOptions options)
     {
-        EventHandler<KeyboardPacketReceivedEventArgs> packetHandler = (_, args) => HandleLayerEvent(tracker, args.Packet);
+        EventHandler<KeyboardPacketReceivedEventArgs> packetHandler =
+            (_, args) => HandleTelemetryEvent(layerTracker, batteryTracker, args.Packet);
         transport.PacketReceived += packetHandler;
         try
         {
             using CancellationTokenSource exchangeTimeout = new(options.Timeout);
             SessionSnapshot result = await OpenTelemetrySessionAsync(
                     transport,
-                    tracker,
+                    layerTracker,
+                    batteryTracker,
                     manifest,
                     exchangeTimeout.Token)
                 .ConfigureAwait(false);
             Console.WriteLine(
-                $"Initial state: revision {result.State.Revision}, layer {result.State.EffectiveLayer.Id} " +
-                $"({result.State.EffectiveLayer.Name}).");
+                $"Initial state: layer revision {result.LayerState.Revision}, layer {result.LayerState.EffectiveLayer.Id} " +
+                $"({result.LayerState.EffectiveLayer.Name}); battery revision {result.BatteryState.Revision}, " +
+                $"left {FormatBattery(result.BatteryState.Left)}, right {FormatBattery(result.BatteryState.Right)}.");
             Console.WriteLine(
-                $"Watching {transport.Kind} for {options.WatchDuration.TotalSeconds:F0} seconds. Use layer keys on both halves now...");
+                $"Watching {transport.Kind} for {options.WatchDuration.TotalSeconds:F0} seconds. " +
+                "Battery heartbeats and layer changes will appear below...");
             await Task.Delay(options.WatchDuration).ConfigureAwait(false);
-            Console.WriteLine("Layer watch complete.");
+            Console.WriteLine("Telemetry watch complete.");
         }
         finally
         {
@@ -115,15 +125,33 @@ internal static class TransportSpikeApplication
         }
     }
 
-    private static void HandleLayerEvent(LayerStateTracker tracker, ReadOnlyMemory<byte> packet)
+    private static void HandleTelemetryEvent(
+        LayerStateTracker layerTracker,
+        BatteryStateTracker batteryTracker,
+        ReadOnlyMemory<byte> packet)
     {
-        if (!ProtocolPacketCodec.TryDecode(packet.Span, out ProtocolMessage? decoded) ||
-            decoded is not ProtocolMessage.LayerChanged changed)
+        if (!ProtocolPacketCodec.TryDecode(packet.Span, out ProtocolMessage? decoded) || decoded is null)
         {
-            Console.Error.WriteLine("WARNING: An unsolicited transport packet was not a valid LayerChanged event.");
+            Console.Error.WriteLine("WARNING: An unsolicited transport packet was not a valid telemetry event.");
             return;
         }
 
+        switch (decoded)
+        {
+            case ProtocolMessage.LayerChanged changed:
+                HandleLayerEvent(layerTracker, changed);
+                break;
+            case ProtocolMessage.BatteryChanged changed:
+                HandleBatteryEvent(batteryTracker, changed);
+                break;
+            default:
+                Console.Error.WriteLine($"WARNING: Unexpected unsolicited {decoded.Type} packet.");
+                break;
+        }
+    }
+
+    private static void HandleLayerEvent(LayerStateTracker tracker, ProtocolMessage.LayerChanged changed)
+    {
         LayerTelemetryApplyResult result = tracker.Apply(changed);
         if (result is LayerTelemetryApplyResult.Applied or LayerTelemetryApplyResult.AppliedAfterGap)
         {
@@ -138,15 +166,39 @@ internal static class TransportSpikeApplication
         }
     }
 
+    private static void HandleBatteryEvent(BatteryStateTracker tracker, ProtocolMessage.BatteryChanged changed)
+    {
+        BatteryTelemetryApplyResult result = tracker.Apply(changed);
+        if (result is BatteryTelemetryApplyResult.Applied or BatteryTelemetryApplyResult.AppliedAfterGap)
+        {
+            BatteryTelemetryState state = tracker.CurrentState!;
+            string gap = result == BatteryTelemetryApplyResult.AppliedAfterGap
+                ? " (converged after a missed revision)"
+                : string.Empty;
+            Console.WriteLine(
+                $"  Battery changed: revision {state.Revision}, left {FormatBattery(state.Left)}, " +
+                $"right {FormatBattery(state.Right)}{gap}");
+        }
+        else if (result is not BatteryTelemetryApplyResult.Duplicate and
+                 not BatteryTelemetryApplyResult.StaleRevision and
+                 not BatteryTelemetryApplyResult.AwaitingSnapshot)
+        {
+            Console.Error.WriteLine($"WARNING: Battery event was not applied: {result}.");
+        }
+    }
+
     private static async Task<SessionSnapshot> OpenTelemetrySessionAsync(
         IKeyboardTransport transport,
-        LayerStateTracker tracker,
+        LayerStateTracker layerTracker,
+        BatteryStateTracker batteryTracker,
         LayoutManifest manifest,
         CancellationToken cancellationToken)
     {
         LayoutFingerprint expectedLayout = LayoutFingerprint.FromLayoutIdentifier(manifest.LayoutIdentifier);
         ushort nonce = CreateNonce();
-        ProtocolMessage.HelloRequest hello = new(nonce, ProtocolCapability.StateTelemetry, expectedLayout);
+        ProtocolCapability requestedCapabilities =
+            ProtocolCapability.StateTelemetry | ProtocolCapability.BatteryTelemetry;
+        ProtocolMessage.HelloRequest hello = new(nonce, requestedCapabilities, expectedLayout);
         long started = Stopwatch.GetTimestamp();
         ReadOnlyMemory<byte> helloBytes = await transport
             .ExchangeAsync(ProtocolPacketCodec.Encode(hello), cancellationToken)
@@ -162,8 +214,9 @@ internal static class TransportSpikeApplication
             throw new InvalidDataException($"The {transport.Kind} HelloResult did not match the request nonce.");
         }
 
-        tracker.BeginSession(helloResult);
-        if (helloResult.SelectedCapabilities != ProtocolCapability.StateTelemetry)
+        layerTracker.BeginSession(helloResult);
+        batteryTracker.BeginSession(helloResult);
+        if (helloResult.SelectedCapabilities != requestedCapabilities)
         {
             throw new InvalidDataException($"The {transport.Kind} session selected unexpected capabilities.");
         }
@@ -185,13 +238,44 @@ internal static class TransportSpikeApplication
             throw new InvalidDataException($"The {transport.Kind} StateSnapshot did not match its session and request.");
         }
 
-        LayerTelemetryApplyResult applyResult = tracker.Apply(snapshot);
-        if (applyResult != LayerTelemetryApplyResult.AppliedSnapshot)
+        LayerTelemetryApplyResult layerApplyResult = layerTracker.Apply(snapshot);
+        if (layerApplyResult != LayerTelemetryApplyResult.AppliedSnapshot)
         {
-            throw new InvalidDataException($"The {transport.Kind} StateSnapshot could not initialize layer state: {applyResult}.");
+            throw new InvalidDataException(
+                $"The {transport.Kind} StateSnapshot could not initialize layer state: {layerApplyResult}.");
         }
 
-        return new SessionSnapshot(helloResult.SessionId, tracker.CurrentState!, duration);
+        uint batteryRequestId = CreateRequestId();
+        ProtocolMessage.GetBatteryRequest getBattery = new(helloResult.SessionId, batteryRequestId);
+        ReadOnlyMemory<byte> batteryBytes = await transport
+            .ExchangeAsync(ProtocolPacketCodec.Encode(getBattery), cancellationToken)
+            .ConfigureAwait(false);
+        duration = Stopwatch.GetElapsedTime(started);
+        if (!ProtocolPacketCodec.TryDecode(batteryBytes.Span, out ProtocolMessage? decodedBattery) ||
+            decodedBattery is not ProtocolMessage.BatterySnapshot batterySnapshot)
+        {
+            throw new InvalidDataException(
+                $"The {transport.Kind} response to GetBattery was not a valid BatterySnapshot.");
+        }
+
+        if (batterySnapshot.SessionId != helloResult.SessionId || batterySnapshot.RequestId != batteryRequestId)
+        {
+            throw new InvalidDataException(
+                $"The {transport.Kind} BatterySnapshot did not match its session and request.");
+        }
+
+        BatteryTelemetryApplyResult batteryApplyResult = batteryTracker.Apply(batterySnapshot);
+        if (batteryApplyResult != BatteryTelemetryApplyResult.AppliedSnapshot)
+        {
+            throw new InvalidDataException(
+                $"The {transport.Kind} BatterySnapshot could not initialize battery state: {batteryApplyResult}.");
+        }
+
+        return new SessionSnapshot(
+            helloResult.SessionId,
+            layerTracker.CurrentState!,
+            batteryTracker.CurrentState!,
+            duration);
     }
 
     private static IKeyboardTransport CreateTransport(TransportKind kind)
@@ -232,5 +316,20 @@ internal static class TransportSpikeApplication
         return requestId;
     }
 
-    private sealed record SessionSnapshot(uint SessionId, LayerTelemetryState State, TimeSpan Duration);
+    private static string FormatBattery(BatteryReading reading)
+    {
+        return reading.Status switch
+        {
+            BatteryReadingStatus.Unavailable => "unavailable",
+            BatteryReadingStatus.Fresh => $"{reading.Level}%",
+            BatteryReadingStatus.Stale => $"{reading.Level}% (stale)",
+            _ => throw new InvalidOperationException($"Unsupported battery status: {reading.Status}."),
+        };
+    }
+
+    private sealed record SessionSnapshot(
+        uint SessionId,
+        LayerTelemetryState LayerState,
+        BatteryTelemetryState BatteryState,
+        TimeSpan Duration);
 }

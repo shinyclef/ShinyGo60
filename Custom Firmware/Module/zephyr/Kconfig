@@ -15,11 +15,34 @@ config SHINYGO60_CENTRAL
 config SHINYGO60_PROTOCOL
     bool
     default y if SHINYGO60_CENTRAL
-    depends on SHINYGO60_CENTRAL
+    depends on SHINYGO60_CENTRAL && SHINYGO60_BATTERY_TELEMETRY
     select RING_BUFFER
     help
       Add the bounded ShinyGo60 protocol over USB CDC and encrypted Bluetooth
       GATT on the Go60 central.
+
+config SHINYGO60_BATTERY_TELEMETRY
+    bool
+    default y if SHINYGO60
+    depends on SHINYGO60 && ZMK_BATTERY_REPORTING
+    help
+      Re-publish ZMK's cached battery reading at a low frequency so the central
+      can distinguish fresh and stale values for both keyboard halves without
+      requesting extra battery sensor samples.
+
+config SHINYGO60_BATTERY_HEARTBEAT_SECONDS
+    int
+    default 60
+    depends on SHINYGO60_BATTERY_TELEMETRY
+    help
+      Seconds between cached battery heartbeats while the keyboard is active.
+
+config SHINYGO60_BATTERY_STALE_SECONDS
+    int
+    default 150
+    depends on SHINYGO60_BATTERY_TELEMETRY
+    help
+      Seconds without a battery observation before its last value is stale.
 
 config SHINYGO60_LAYOUT_IDENTIFIER
     string "Generated ShinyGo60 layout identifier"

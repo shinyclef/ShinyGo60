@@ -20,6 +20,15 @@ static const uint8_t state_snapshot[] = {
 static const uint8_t layer_changed[] = {
 #include "vectors/layer-changed.bytes"
 };
+static const uint8_t get_battery[] = {
+#include "vectors/get-battery.bytes"
+};
+static const uint8_t battery_snapshot[] = {
+#include "vectors/battery-snapshot.bytes"
+};
+static const uint8_t battery_changed[] = {
+#include "vectors/battery-changed.bytes"
+};
 static const uint8_t set_persistent_layer[] = {
 #include "vectors/set-persistent-layer.bytes"
 };
@@ -60,6 +69,9 @@ static void verify_golden_vectors(void)
     assert_round_trip(get_state, SHINYGO60_MESSAGE_GET_STATE);
     assert_round_trip(state_snapshot, SHINYGO60_MESSAGE_STATE_SNAPSHOT);
     assert_round_trip(layer_changed, SHINYGO60_MESSAGE_LAYER_CHANGED);
+    assert_round_trip(get_battery, SHINYGO60_MESSAGE_GET_BATTERY);
+    assert_round_trip(battery_snapshot, SHINYGO60_MESSAGE_BATTERY_SNAPSHOT);
+    assert_round_trip(battery_changed, SHINYGO60_MESSAGE_BATTERY_CHANGED);
     assert_round_trip(set_persistent_layer, SHINYGO60_MESSAGE_SET_PERSISTENT_LAYER);
     assert_round_trip(press_momentary_layer, SHINYGO60_MESSAGE_PRESS_MOMENTARY_LAYER);
     assert_round_trip(renew_momentary_layer, SHINYGO60_MESSAGE_RENEW_MOMENTARY_LAYER);
@@ -71,7 +83,7 @@ static void verify_golden_vectors(void)
     assert(shinygo60_protocol_decode(hello_request, sizeof(hello_request), &message) ==
            SHINYGO60_DECODE_OK);
     assert(message.payload.hello.client_nonce == 0x1234U);
-    assert(message.payload.hello.requested_capabilities == 0x07U);
+    assert(message.payload.hello.requested_capabilities == 0x0fU);
     assert(message.payload.hello.expected_layout[0] == 0xb4U);
     assert(message.payload.hello.expected_layout[7] == 0xf3U);
 
@@ -84,6 +96,15 @@ static void verify_golden_vectors(void)
     assert(message.payload.state.state.persistent_layer == 4U);
     assert(message.payload.state.state.momentary_count == 1U);
     assert(message.payload.state.state.indicators == 3U);
+
+    assert(shinygo60_protocol_decode(battery_changed, sizeof(battery_changed), &message) ==
+           SHINYGO60_DECODE_OK);
+    assert(message.payload.battery.session_id == 0x89abcdefU);
+    assert(message.payload.battery.state.revision == 45U);
+    assert(message.payload.battery.related_id == 0U);
+    assert(message.payload.battery.state.left_level == 86U);
+    assert(message.payload.battery.state.right_level == 63U);
+    assert(message.payload.battery.state.indicators == 0x0dU);
 
     assert(shinygo60_protocol_decode(error_message, sizeof(error_message), &message) ==
            SHINYGO60_DECODE_OK);
@@ -110,7 +131,7 @@ static void verify_malformed_packets(void)
     assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_BAD_MAGIC);
 
     memcpy(packet, hello_request, sizeof(packet));
-    packet[2] = 0x11U;
+    packet[2] = 0x10U;
     assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_UNSUPPORTED_VERSION);
 
     memcpy(packet, hello_request, sizeof(packet));
@@ -138,12 +159,28 @@ static void verify_malformed_packets(void)
     memcpy(packet, state_snapshot, sizeof(packet));
     packet[19] = SHINYGO60_LAYER_STATE_PERSISTENT_ACTIVE;
     assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_INVALID_PAYLOAD);
+
+    memcpy(packet, battery_snapshot, sizeof(packet));
+    packet[18] = 0x10U;
+    assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_INVALID_PAYLOAD);
+
+    memcpy(packet, battery_snapshot, sizeof(packet));
+    packet[16] = 101U;
+    assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_INVALID_PAYLOAD);
+
+    memcpy(packet, battery_snapshot, sizeof(packet));
+    packet[18] = SHINYGO60_BATTERY_LEFT_AVAILABLE | SHINYGO60_BATTERY_RIGHT_STALE;
+    assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_INVALID_PAYLOAD);
+
+    memcpy(packet, battery_snapshot, sizeof(packet));
+    packet[19] = 1U;
+    assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_INVALID_PAYLOAD);
 }
 
 int main(void)
 {
     verify_golden_vectors();
     verify_malformed_packets();
-    puts("C protocol codec: 11 golden vectors and malformed packets passed");
+    puts("C protocol codec: 14 golden vectors and malformed packets passed");
     return 0;
 }

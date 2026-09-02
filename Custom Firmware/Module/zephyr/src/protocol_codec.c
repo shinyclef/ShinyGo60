@@ -5,6 +5,7 @@
 #define PAYLOAD_OFFSET 4U
 #define KNOWN_CAPABILITIES 0x0fU
 #define KNOWN_STATE_INDICATORS 0x03U
+#define KNOWN_BATTERY_INDICATORS 0x0fU
 
 static uint16_t read_u16_le(const uint8_t *bytes)
 {
@@ -66,6 +67,22 @@ static bool layer_state_is_valid(const struct shinygo60_layer_state *state)
            (state->indicators & ~KNOWN_STATE_INDICATORS) == 0U &&
            persistent_active == (state->persistent_layer != SHINYGO60_NO_LAYER) &&
            momentary_active == (state->momentary_count > 0U);
+}
+
+static bool battery_state_is_valid(const struct shinygo60_battery_state *state)
+{
+    bool left_available =
+        (state->indicators & SHINYGO60_BATTERY_LEFT_AVAILABLE) != 0U;
+    bool left_stale = (state->indicators & SHINYGO60_BATTERY_LEFT_STALE) != 0U;
+    bool right_available =
+        (state->indicators & SHINYGO60_BATTERY_RIGHT_AVAILABLE) != 0U;
+    bool right_stale = (state->indicators & SHINYGO60_BATTERY_RIGHT_STALE) != 0U;
+
+    return state->revision != 0U &&
+           (state->indicators & ~KNOWN_BATTERY_INDICATORS) == 0U &&
+           (!left_stale || left_available) && (!right_stale || right_available) &&
+           (left_available ? state->left_level <= 100U : state->left_level == 0U) &&
+           (right_available ? state->right_level <= 100U : state->right_level == 0U);
 }
 
 static bool hello_status_is_valid(uint8_t status)
@@ -132,6 +149,29 @@ static bool decode_state(const uint8_t *payload, struct shinygo60_message *messa
     message->payload.state.state.indicators = payload[15];
     return message->payload.state.session_id != 0U &&
            layer_state_is_valid(&message->payload.state.state);
+}
+
+static bool decode_get_battery(const uint8_t *payload, struct shinygo60_message *message)
+{
+    message->payload.get_battery.session_id = read_u32_le(payload);
+    message->payload.get_battery.request_id = read_u32_le(&payload[4]);
+    return message->payload.get_battery.session_id != 0U &&
+           message->payload.get_battery.request_id != 0U && all_zero(&payload[8], 8U);
+}
+
+static bool decode_battery(const uint8_t *payload, struct shinygo60_message *message)
+{
+    message->payload.battery.session_id = read_u32_le(payload);
+    message->payload.battery.state.revision = read_u32_le(&payload[4]);
+    message->payload.battery.related_id = read_u32_le(&payload[8]);
+    message->payload.battery.state.left_level = payload[12];
+    message->payload.battery.state.right_level = payload[13];
+    message->payload.battery.state.indicators = payload[14];
+    bool related_id_is_valid = message->type == SHINYGO60_MESSAGE_BATTERY_CHANGED
+                                   ? message->payload.battery.related_id == 0U
+                                   : message->payload.battery.related_id != 0U;
+    return message->payload.battery.session_id != 0U && related_id_is_valid &&
+           payload[15] == 0U && battery_state_is_valid(&message->payload.battery.state);
 }
 
 static bool decode_layer_command(const uint8_t *payload, struct shinygo60_message *message)
@@ -232,6 +272,13 @@ enum shinygo60_decode_result shinygo60_protocol_decode(
     case SHINYGO60_MESSAGE_LAYER_CHANGED:
         valid = decode_state(payload, message);
         break;
+    case SHINYGO60_MESSAGE_GET_BATTERY:
+        valid = decode_get_battery(payload, message);
+        break;
+    case SHINYGO60_MESSAGE_BATTERY_SNAPSHOT:
+    case SHINYGO60_MESSAGE_BATTERY_CHANGED:
+        valid = decode_battery(payload, message);
+        break;
     case SHINYGO60_MESSAGE_SET_PERSISTENT_LAYER:
     case SHINYGO60_MESSAGE_PRESS_MOMENTARY_LAYER:
         valid = decode_layer_command(payload, message);
@@ -313,6 +360,37 @@ static bool encode_state(const struct shinygo60_message *message, uint8_t *paylo
     payload[13] = message->payload.state.state.persistent_layer;
     payload[14] = message->payload.state.state.momentary_count;
     payload[15] = message->payload.state.state.indicators;
+    return true;
+}
+
+static bool encode_get_battery(const struct shinygo60_message *message, uint8_t *payload)
+{
+    if (message->payload.get_battery.session_id == 0U ||
+        message->payload.get_battery.request_id == 0U) {
+        return false;
+    }
+
+    write_u32_le(payload, message->payload.get_battery.session_id);
+    write_u32_le(&payload[4], message->payload.get_battery.request_id);
+    return true;
+}
+
+static bool encode_battery(const struct shinygo60_message *message, uint8_t *payload)
+{
+    bool related_id_is_valid = message->type == SHINYGO60_MESSAGE_BATTERY_CHANGED
+                                   ? message->payload.battery.related_id == 0U
+                                   : message->payload.battery.related_id != 0U;
+    if (message->payload.battery.session_id == 0U || !related_id_is_valid ||
+        !battery_state_is_valid(&message->payload.battery.state)) {
+        return false;
+    }
+
+    write_u32_le(payload, message->payload.battery.session_id);
+    write_u32_le(&payload[4], message->payload.battery.state.revision);
+    write_u32_le(&payload[8], message->payload.battery.related_id);
+    payload[12] = message->payload.battery.state.left_level;
+    payload[13] = message->payload.battery.state.right_level;
+    payload[14] = message->payload.battery.state.indicators;
     return true;
 }
 
@@ -408,6 +486,11 @@ bool shinygo60_protocol_encode(
     case SHINYGO60_MESSAGE_STATE_SNAPSHOT:
     case SHINYGO60_MESSAGE_LAYER_CHANGED:
         return encode_state(message, payload);
+    case SHINYGO60_MESSAGE_GET_BATTERY:
+        return encode_get_battery(message, payload);
+    case SHINYGO60_MESSAGE_BATTERY_SNAPSHOT:
+    case SHINYGO60_MESSAGE_BATTERY_CHANGED:
+        return encode_battery(message, payload);
     case SHINYGO60_MESSAGE_SET_PERSISTENT_LAYER:
     case SHINYGO60_MESSAGE_PRESS_MOMENTARY_LAYER:
         return encode_layer_command(message, payload);

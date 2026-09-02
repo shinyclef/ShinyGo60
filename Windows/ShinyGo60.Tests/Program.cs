@@ -20,6 +20,7 @@ internal static class Program
             new("Builder process orchestration contract", ProcessContractTests.RunAsync),
             new("Companion shortcut contract", ShortcutContractTests.RunAsync),
             new("Effective-layer state convergence", LayerStateTrackerTests.RunAsync),
+            new("Per-half battery state convergence", BatteryStateTrackerTests.RunAsync),
             new("Structured diagnostic sink", DiagnosticSinkTests.RunAsync),
         ];
 

@@ -9,7 +9,8 @@
 #define LAYOUT_IDENTIFIER_PREFIX "sg60-v1-"
 #define LAYOUT_IDENTIFIER_PREFIX_LENGTH 8U
 #define LAYOUT_IDENTIFIER_HEX_LENGTH 32U
-#define SUPPORTED_CAPABILITIES SHINYGO60_CAPABILITY_STATE_TELEMETRY
+#define SUPPORTED_CAPABILITIES \
+    (SHINYGO60_CAPABILITY_STATE_TELEMETRY | SHINYGO60_CAPABILITY_BATTERY_TELEMETRY)
 #define EVENT_RETRY_DELAY K_MSEC(20)
 
 BUILD_ASSERT(sizeof(CONFIG_SHINYGO60_LAYOUT_IDENTIFIER) - 1U ==
@@ -20,16 +21,23 @@ static struct k_spinlock session_lock;
 static uint32_t active_session_id;
 static enum shinygo60_transport active_transport;
 static uint8_t selected_capabilities;
-static bool snapshot_sent;
+static bool layer_snapshot_sent;
+static bool battery_snapshot_sent;
 static bool layer_event_pending;
+static bool battery_event_pending;
 static struct shinygo60_layer_state current_state = {
     .revision = 1U,
     .effective_layer = 0U,
     .persistent_layer = SHINYGO60_NO_LAYER,
 };
+static struct shinygo60_battery_state current_battery_state = {
+    .revision = 1U,
+};
 
 static void layer_event_work_handler(struct k_work *work);
+static void battery_event_work_handler(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(layer_event_work, layer_event_work_handler);
+static K_WORK_DELAYABLE_DEFINE(battery_event_work, battery_event_work_handler);
 
 static bool decode_hex_digit(char character, uint8_t *value)
 {
@@ -95,8 +103,10 @@ static uint32_t start_session(enum shinygo60_transport transport, uint8_t capabi
     active_session_id = session_id;
     active_transport = transport;
     selected_capabilities = capabilities;
-    snapshot_sent = false;
+    layer_snapshot_sent = false;
+    battery_snapshot_sent = false;
     layer_event_pending = false;
+    battery_event_pending = false;
     k_spin_unlock(&session_lock, key);
     return session_id;
 }
@@ -210,7 +220,7 @@ static bool handle_get_state(
     } else if ((selected_capabilities & SHINYGO60_CAPABILITY_STATE_TELEMETRY) != 0U) {
         code = 0U;
         state = current_state;
-        snapshot_sent = true;
+        layer_snapshot_sent = true;
         layer_event_pending = false;
     }
     uint32_t state_revision = current_state.revision;
@@ -225,6 +235,49 @@ static bool handle_get_state(
     struct shinygo60_message snapshot = {
         .type = SHINYGO60_MESSAGE_STATE_SNAPSHOT,
         .payload.state = {
+            .session_id = session_id,
+            .related_id = request_id,
+            .state = state,
+        },
+    };
+    return shinygo60_protocol_encode(&snapshot, response);
+}
+
+static bool handle_get_battery(
+    enum shinygo60_transport transport,
+    const struct shinygo60_message *request,
+    uint8_t response[SHINYGO60_PACKET_SIZE])
+{
+    uint32_t session_id = request->payload.get_battery.session_id;
+    uint32_t request_id = request->payload.get_battery.request_id;
+    struct shinygo60_battery_state state;
+
+    shinygo60_battery_telemetry_refresh();
+
+    k_spinlock_key_t key = k_spin_lock(&session_lock);
+    uint8_t code = SHINYGO60_ERROR_CAPABILITY_UNAVAILABLE;
+    if (active_session_id == 0U) {
+        code = SHINYGO60_ERROR_NO_SESSION;
+    } else if (active_session_id != session_id || active_transport != transport) {
+        code = SHINYGO60_ERROR_WRONG_SESSION;
+    } else if ((selected_capabilities & SHINYGO60_CAPABILITY_BATTERY_TELEMETRY) != 0U) {
+        code = 0U;
+        state = current_battery_state;
+        battery_snapshot_sent = true;
+        battery_event_pending = false;
+    }
+    uint32_t state_revision = current_battery_state.revision;
+    k_spin_unlock(&session_lock, key);
+
+    if (code != 0U) {
+        struct shinygo60_message error = create_error(
+            session_id, request_id, state_revision, code, SHINYGO60_MESSAGE_GET_BATTERY, 0U);
+        return shinygo60_protocol_encode(&error, response);
+    }
+
+    struct shinygo60_message snapshot = {
+        .type = SHINYGO60_MESSAGE_BATTERY_SNAPSHOT,
+        .payload.battery = {
             .session_id = session_id,
             .related_id = request_id,
             .state = state,
@@ -302,6 +355,10 @@ bool shinygo60_protocol_handle(
         return handle_get_state(transport, &decoded, response);
     }
 
+    if (decoded.type == SHINYGO60_MESSAGE_GET_BATTERY) {
+        return handle_get_battery(transport, &decoded, response);
+    }
+
     uint32_t session_id;
     uint32_t related_id;
     uint32_t state_revision;
@@ -331,10 +388,12 @@ void shinygo60_protocol_observe_effective_layer(uint8_t effective_layer)
         if (current_state.revision == 0U) {
             active_session_id = 0U;
             selected_capabilities = 0U;
-            snapshot_sent = false;
+            layer_snapshot_sent = false;
+            battery_snapshot_sent = false;
             layer_event_pending = false;
+            battery_event_pending = false;
             current_state.revision = 1U;
-        } else if (active_session_id != 0U && snapshot_sent &&
+        } else if (active_session_id != 0U && layer_snapshot_sent &&
                    (selected_capabilities & SHINYGO60_CAPABILITY_STATE_TELEMETRY) != 0U) {
             layer_event_pending = true;
             send_event = true;
@@ -347,19 +406,79 @@ void shinygo60_protocol_observe_effective_layer(uint8_t effective_layer)
     }
 }
 
+void shinygo60_protocol_observe_battery(
+    enum shinygo60_battery_half half, uint8_t level, bool available, bool stale)
+{
+    if ((half != SHINYGO60_BATTERY_HALF_LEFT && half != SHINYGO60_BATTERY_HALF_RIGHT) ||
+        (available && level > 100U)) {
+        return;
+    }
+
+    if (!available) {
+        level = 0U;
+        stale = false;
+    }
+
+    uint8_t available_indicator = half == SHINYGO60_BATTERY_HALF_LEFT
+                                      ? SHINYGO60_BATTERY_LEFT_AVAILABLE
+                                      : SHINYGO60_BATTERY_RIGHT_AVAILABLE;
+    uint8_t stale_indicator = half == SHINYGO60_BATTERY_HALF_LEFT
+                                  ? SHINYGO60_BATTERY_LEFT_STALE
+                                  : SHINYGO60_BATTERY_RIGHT_STALE;
+    uint8_t *current_level = half == SHINYGO60_BATTERY_HALF_LEFT
+                                 ? &current_battery_state.left_level
+                                 : &current_battery_state.right_level;
+    bool send_event = false;
+    k_spinlock_key_t key = k_spin_lock(&session_lock);
+    uint8_t new_indicators = current_battery_state.indicators &
+                             (uint8_t)~(available_indicator | stale_indicator);
+    if (available) {
+        new_indicators |= available_indicator;
+    }
+    if (stale) {
+        new_indicators |= stale_indicator;
+    }
+
+    if (*current_level != level || current_battery_state.indicators != new_indicators) {
+        *current_level = level;
+        current_battery_state.indicators = new_indicators;
+        current_battery_state.revision++;
+        if (current_battery_state.revision == 0U) {
+            active_session_id = 0U;
+            selected_capabilities = 0U;
+            layer_snapshot_sent = false;
+            battery_snapshot_sent = false;
+            layer_event_pending = false;
+            battery_event_pending = false;
+            current_battery_state.revision = 1U;
+        } else if (active_session_id != 0U && battery_snapshot_sent &&
+                   (selected_capabilities & SHINYGO60_CAPABILITY_BATTERY_TELEMETRY) != 0U) {
+            battery_event_pending = true;
+            send_event = true;
+        }
+    }
+    k_spin_unlock(&session_lock, key);
+
+    if (send_event) {
+        (void)k_work_reschedule(&battery_event_work, K_NO_WAIT);
+    }
+}
+
 void shinygo60_protocol_transport_disconnected(enum shinygo60_transport transport)
 {
     k_spinlock_key_t key = k_spin_lock(&session_lock);
     if (active_session_id != 0U && active_transport == transport) {
         active_session_id = 0U;
         selected_capabilities = 0U;
-        snapshot_sent = false;
+        layer_snapshot_sent = false;
+        battery_snapshot_sent = false;
         layer_event_pending = false;
+        battery_event_pending = false;
     }
     k_spin_unlock(&session_lock, key);
 }
 
-static bool send_layer_event(
+static bool send_event_packet(
     enum shinygo60_transport transport,
     const uint8_t packet[SHINYGO60_PACKET_SIZE])
 {
@@ -383,7 +502,7 @@ static void layer_event_work_handler(struct k_work *work)
     enum shinygo60_transport transport;
 
     k_spinlock_key_t key = k_spin_lock(&session_lock);
-    if (!layer_event_pending || active_session_id == 0U || !snapshot_sent) {
+    if (!layer_event_pending || active_session_id == 0U || !layer_snapshot_sent) {
         k_spin_unlock(&session_lock, key);
         return;
     }
@@ -394,17 +513,54 @@ static void layer_event_work_handler(struct k_work *work)
     k_spin_unlock(&session_lock, key);
 
     uint8_t packet[SHINYGO60_PACKET_SIZE];
-    bool sent = shinygo60_protocol_encode(&event, packet) && send_layer_event(transport, packet);
+    bool sent = shinygo60_protocol_encode(&event, packet) && send_event_packet(transport, packet);
 
     key = k_spin_lock(&session_lock);
     if (sent && layer_event_pending && active_session_id == event.payload.state.session_id &&
         active_transport == transport && current_state.revision == event.payload.state.state.revision) {
         layer_event_pending = false;
     }
-    bool retry = layer_event_pending && active_session_id != 0U && snapshot_sent;
+    bool retry = layer_event_pending && active_session_id != 0U && layer_snapshot_sent;
     k_spin_unlock(&session_lock, key);
 
     if (retry) {
         (void)k_work_reschedule(&layer_event_work, sent ? K_NO_WAIT : EVENT_RETRY_DELAY);
+    }
+}
+
+static void battery_event_work_handler(struct k_work *work)
+{
+    ARG_UNUSED(work);
+
+    struct shinygo60_message event = {
+        .type = SHINYGO60_MESSAGE_BATTERY_CHANGED,
+    };
+    enum shinygo60_transport transport;
+
+    k_spinlock_key_t key = k_spin_lock(&session_lock);
+    if (!battery_event_pending || active_session_id == 0U || !battery_snapshot_sent) {
+        k_spin_unlock(&session_lock, key);
+        return;
+    }
+
+    event.payload.battery.session_id = active_session_id;
+    event.payload.battery.state = current_battery_state;
+    transport = active_transport;
+    k_spin_unlock(&session_lock, key);
+
+    uint8_t packet[SHINYGO60_PACKET_SIZE];
+    bool sent = shinygo60_protocol_encode(&event, packet) && send_event_packet(transport, packet);
+
+    key = k_spin_lock(&session_lock);
+    if (sent && battery_event_pending && active_session_id == event.payload.battery.session_id &&
+        active_transport == transport &&
+        current_battery_state.revision == event.payload.battery.state.revision) {
+        battery_event_pending = false;
+    }
+    bool retry = battery_event_pending && active_session_id != 0U && battery_snapshot_sent;
+    k_spin_unlock(&session_lock, key);
+
+    if (retry) {
+        (void)k_work_reschedule(&battery_event_work, sent ? K_NO_WAIT : EVENT_RETRY_DELAY);
     }
 }
