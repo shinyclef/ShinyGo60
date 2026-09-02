@@ -20,10 +20,12 @@ maintainer workflow with a documented 10 GB free-space requirement. The release'
 | MoErgo ZMK | `v25.11`, commit `11454d23596afbdb06380a1125371b19ab65675c` |
 | Docker base | `nixpkgs/nix:nixos-23.11@sha256:11c1c37da85b27f1b47a7c0fdff8e3cf970cafaac623312dbcf243c84b8756dd` |
 | Validated local image | `shinygo60-builder:v25.11` |
-| Validated local image ID | `sha256:8c05b8af27498f7f42391fa408dfd841fbebfdc70f0d7766a280edd03db98720` |
+| Initial Step 3 local image ID | `sha256:8c05b8af27498f7f42391fa408dfd841fbebfdc70f0d7766a280edd03db98720` |
+| Step 8 reconstruction image ID | `sha256:efc1cd8775ef49246130c2841cc06638f3e243caffd29c3d587292423706bb41` |
 | ARM cross-compiler | Arm GNU Toolchain `12.3.Rel1`, `arm-none-eabi-gcc 12.3.1` |
 
-The local image ID is not a substitute for a registry digest. Publishing and pinning the release image digest remains packaging work.
+The local image IDs are construction evidence, not substitutes for a registry digest. BuildKit export metadata changed the local ID between otherwise equivalent
+constructions. Publishing and pinning the release image digest remains packaging work.
 
 ## Official path versus selected image
 

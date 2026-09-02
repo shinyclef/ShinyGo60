@@ -10,7 +10,8 @@ BUILD_ASSERT(IS_ENABLED(CONFIG_BOARD_GO60_LH), "ShinyGo60 runtime code must only
 
 static struct shinygo60_diagnostic diagnostic = {
     .feature_version = SHINYGO60_FEATURE_VERSION,
-    .layout_identifier = SHINYGO60_TEST_LAYOUT_IDENTIFIER,
+    .layout_identifier = CONFIG_SHINYGO60_LAYOUT_IDENTIFIER,
+    .keymap_sha256 = CONFIG_SHINYGO60_KEYMAP_SHA256,
 };
 
 static uint32_t hash_text(uint32_t hash, const char *text)
@@ -27,7 +28,8 @@ static uint32_t hash_text(uint32_t hash, const char *text)
 static int shinygo60_initialize(void)
 {
     uint32_t hash = hash_text(FNV1A_OFFSET_BASIS, diagnostic.feature_version);
-    diagnostic.identity_checksum = hash_text(hash, diagnostic.layout_identifier);
+    hash = hash_text(hash, diagnostic.layout_identifier);
+    diagnostic.identity_checksum = hash_text(hash, diagnostic.keymap_sha256);
 
     return 0;
 }

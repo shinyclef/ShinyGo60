@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ShinyGo60.BuildTool</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ShinyGo60.Builder.Core\ShinyGo60.Builder.Core.csproj" />
+  </ItemGroup>
+</Project>

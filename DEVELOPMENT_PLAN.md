@@ -1,8 +1,8 @@
 # ShinyGo60 Development Plan
 
-Status: corrected Step 6 v0.2.1 passed TRRS, USB, Bluetooth, and transport switching; remaining gate G3 security and reconnection tests are pending
+Status: Step 8 complete; corrected Step 6 passed core transport checks, with its remaining gate G3 security and reconnection tests still pending
 
-Last updated: 2026-09-01
+Last updated: 2026-09-02
 
 This is the ordered execution plan for ShinyGo60. It turns the architecture in
 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) into development steps with explicit dependencies, deliverables, and completion gates.
@@ -276,15 +276,20 @@ Goal: create a trustworthy link between the exported layout, firmware, and compa
 
 Work:
 
-- [ ] Validate that the input resembles a complete Go60 Layout Editor `.keymap` export.
-- [ ] Extract the ordered numeric layer IDs and generated layer names.
-- [ ] Hash the exact keymap and other identity-defining build inputs.
-- [ ] Generate a versioned layout identifier.
-- [ ] Generate `layout-manifest.json` with schema version, protocol version, layer mapping, source revision, and keymap hash.
-- [ ] Generate the corresponding firmware-side layout identifier.
-- [ ] Preserve the keymap's behavior definitions byte-for-byte when copying it into the generated workspace.
-- [ ] Add fixtures covering complex behaviors, Unicode paths, spaces, reordered layers, malformed exports, and future exporter variations.
-- [ ] Do not build a general Devicetree rewriter.
+- [x] Validate that the input resembles a complete Go60 Layout Editor `.keymap` export.
+- [x] Extract the ordered numeric layer IDs and generated layer names.
+- [x] Hash the exact keymap and other identity-defining build inputs.
+- [x] Generate a versioned layout identifier.
+- [x] Generate `layout-manifest.json` with schema version, protocol version, layer mapping, source revision, and keymap hash.
+- [x] Generate the corresponding firmware-side layout identifier.
+- [x] Preserve the keymap's behavior definitions byte-for-byte when copying it into the generated workspace.
+- [x] Add fixtures covering complex behaviors, Unicode paths, spaces, reordered layers, malformed exports, and future exporter variations.
+- [x] Do not build a general Devicetree rewriter.
+
+Step 7 completed on 2026-09-02. The current 101,084-byte keymap produces 22 ordered layers, keymap SHA-256
+`ab526e96c32048301990b09309bfab7f2b6a1323ccbc07892aac43dab6c6b7f7`, and layout ID `sg60-v1-b4c690cedfc730f31f0dbfb696b59779`.
+The accepted syntax, identity algorithm, output files, fixtures, and verification evidence are recorded in
+[Custom Firmware/BuildSupport/STEP7_KEYMAP_INSPECTION.md](Custom%20Firmware/BuildSupport/STEP7_KEYMAP_INSPECTION.md).
 
 Deliverables:
 
@@ -300,34 +305,41 @@ Done when:
 
 Depends on: Step 4. May run in parallel with Steps 5 and 6 after the keymap format is available.
 
-## Step 8: Build the headless firmware pipeline
+## Step 8: Build the headless firmware pipeline (complete)
 
 Goal: make the complete build reliable before adding a graphical wrapper.
 
 Work:
 
-- [ ] Accept an explicit keymap path from a command-line development tool.
-- [ ] Create a clean disposable generated workspace.
-- [ ] Copy the keymap without rewriting its behavior definitions.
-- [ ] Generate and embed the matching layout identifier.
-- [ ] Invoke the pinned build environment selected in Step 3.
-- [ ] Validate that the UF2 is newly produced, non-empty, and from the current build.
-- [ ] Publish the UF2, manifest, and log as one atomic output set.
-- [ ] Leave no apparently successful partial output after failure or cancellation.
-- [ ] Surface Docker-not-running, insufficient-space, download, compiler, parser, and stale-output errors clearly.
-- [ ] Test cold, warm, and cached-offline builds.
-- [ ] Test paths containing spaces, Unicode, long names, and OneDrive synchronization.
+- [x] Accept an explicit keymap path from a command-line development tool.
+- [x] Create a clean disposable generated workspace.
+- [x] Copy the keymap without rewriting its behavior definitions.
+- [x] Generate and embed the matching layout identifier.
+- [x] Invoke only the pinned image name with its managed role, ZMK tag, and exact source revision selected in Step 3.
+- [x] Validate that the UF2 is newly produced, non-empty, structurally complete, and contains the current layout identity.
+- [x] Publish the UF2, manifest, and log as one atomic output set.
+- [x] Leave no apparently successful partial output after failure or cancellation.
+- [x] Surface Docker-not-running, missing-image, insufficient-space, compiler, parser, and stale-output errors clearly; registry download UX remains Step 15 work.
+- [x] Test image reconstruction followed by cold, repeat, and cached-offline firmware builds.
+- [x] Test paths containing spaces, Unicode, and long names through automated process-boundary coverage.
+- [x] Complete genuine builds from the OneDrive project path.
 
 Deliverables:
 
-- Scriptable keymap-to-UF2 pipeline.
-- Matched UF2/manifest/log output set.
-- Automated orchestration tests where hardware is not required.
+- [x] Scriptable keymap-to-UF2 pipeline.
+- [x] Matched UF2/manifest/log publication contract.
+- [x] Automated orchestration tests where hardware is not required.
+
+Step 8 completed on 2026-09-02. Missing-image, genuine compiler, and OneDrive cleanup failures each retained a diagnostic log without publishing an apparently
+successful UF2. After the resulting Kconfig and read-only-directory cleanup fixes, two network-disabled builds from the OneDrive project path produced separate
+matched output sets with identical 937,984-byte UF2s and SHA-256 `9900fdcdb44fdc0343a45e7a785e866935f692bf3053e61d5ce7faacc937e468`.
+The dedicated construction cache was then removed while retaining the 4.46 GB image. Design, commands, tests, measurements, and failure evidence are recorded in
+[Custom Firmware/BuildSupport/STEP8_HEADLESS_PIPELINE.md](Custom%20Firmware/BuildSupport/STEP8_HEADLESS_PIPELINE.md).
 
 Done when:
 
-- One command produces the complete matched output set without manual source edits.
-- A failed build never leaves a UF2 that could be mistaken for a successful new result.
+- [x] One command produces the complete matched output set without manual source edits.
+- [x] A failed build never leaves a UF2 that could be mistaken for a successful new result.
 
 Depends on: Steps 3, 5, and 7. Can progress alongside Step 6, but its production UX waits for the transport gate.
 

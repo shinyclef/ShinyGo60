@@ -190,8 +190,9 @@ source; `Custom Firmware/Generated`, `Output`, `bin`, and `obj` are disposable a
 
 ## Current status
 
-The project has completed workspace scaffolding and a corrected Step 6 dual-transport implementation. Firmware v0.2.1 has passed its TRRS, USB, Bluetooth, and
-transport-switching hardware checks; the remaining security/reconnection matrix still requires validation. The repository currently contains:
+The project has completed its headless keymap-to-UF2 pipeline alongside the corrected Step 6 dual-transport firmware. Firmware v0.2.1 has
+passed its TRRS, USB, Bluetooth, and transport-switching hardware checks; the remaining security/reconnection matrix still requires validation. The repository
+currently contains:
 
 - The active MoErgo-exported `.keymap` for the first build fixture.
 - A MoErgo Layout Editor JSON snapshot, retained as a reference rather than a version-one build input.
@@ -201,6 +202,9 @@ transport-switching hardware checks; the remaining security/reconnection matrix 
 - A pinned, single-revision Go60 firmware image definition, offline build scripts, and scoped cleanup.
 - A .NET 10 C# solution with shared protocol and diagnostic libraries, headless builder and companion cores, WPF application shells, offline scaffold tests, and a
   provisional USB/Bluetooth diagnostic client.
+- A strict Go60 keymap inspector, deterministic layout identity, shared manifest reader/writer, and matching generated firmware header.
+- A command-line build tool with clean workspaces, pinned Docker metadata verification, structural and identity-aware UF2 validation, atomic matched outputs, and
+  cancellation cleanup.
 - An out-of-tree ZMK module with central-only USB CDC/ACM and bonded, encrypted Bluetooth GATT transports included through the supported MoErgo build hook.
 
 The baseline UF2 has passed reproducible build, structural validation, and an initial hardware flash test. Its exact pins, hashes, measurements, and remaining
@@ -223,7 +227,18 @@ Corrected-build USB and Bluetooth exchanges passed, followed by a successful USB
 reconnection tests. Evidence and test commands are recorded in
 [Custom Firmware/BuildSupport/STEP6_DUAL_TRANSPORT.md](Custom%20Firmware/BuildSupport/STEP6_DUAL_TRANSPORT.md).
 
-The functional one-click build pipeline and production companion behavior have not yet been implemented. Step 4 scaffold evidence is recorded in
+Step 7 validates the exported Go60 structure without interpreting or rewriting its behaviors. It extracts the 22 ordered layers from the current keymap, hashes
+and copies the exact source bytes, generates a protocol-versioned layout ID, and writes matching JSON and firmware-header identities. Reordering layers changes the
+identifier, while spaces and Unicode paths are supported. Evidence is recorded in
+[Custom Firmware/BuildSupport/STEP7_KEYMAP_INSPECTION.md](Custom%20Firmware/BuildSupport/STEP7_KEYMAP_INSPECTION.md).
+
+Step 8's C# command-line tool carries those exact bytes and identities through a fresh pinned firmware workspace and publishes a UF2, manifest, and build log only
+as one complete output set. Its offline orchestration suite and two genuine network-disabled builds from the OneDrive project path pass. The repeat builds produced
+identical 937,984-byte UF2s from the current keymap, all disposable workspaces were removed, and only the 4.46 GB build image remains after scoped cache cleanup.
+Evidence and measurements are recorded in
+[Custom Firmware/BuildSupport/STEP8_HEADLESS_PIPELINE.md](Custom%20Firmware/BuildSupport/STEP8_HEADLESS_PIPELINE.md).
+
+The graphical one-click wrapper and production companion behavior have not yet been implemented. Step 4 scaffold evidence is recorded in
 [Custom Firmware/BuildSupport/STEP4_SCAFFOLD.md](Custom%20Firmware/BuildSupport/STEP4_SCAFFOLD.md).
 
 ## Design principles
@@ -242,7 +257,7 @@ The functional one-click build pipeline and production companion behavior have n
 1. Establish safe rollback and reproduce an unchanged, pinned Go60 firmware build.
 2. Measure and select a practical local build environment with an accepted disk footprint. **Complete.**
 3. Integrate a minimal firmware module and prove the same message round-trip over USB and encrypted Bluetooth Low Energy.
-4. Inspect a `.keymap` and generate a versioned layer manifest shared by firmware and Windows.
+4. Inspect a `.keymap` and generate a versioned layer manifest shared by firmware and Windows. **Complete.**
 5. Build the reliable headless keymap-to-UF2 pipeline and wrap it in a one-click C# builder.
 6. Report effective layer changes and decide the separate left/right battery feasibility gate.
 7. Add persistent and leased momentary layer commands with disconnect and crash safety.

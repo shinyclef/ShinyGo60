@@ -10,10 +10,10 @@ internal static class ProtocolContractTests
     public static ValueTask RunAsync()
     {
         LayoutManifest manifest = new(
-            SchemaVersion: 1,
+            SchemaVersion: LayoutManifest.CurrentSchemaVersion,
             ProtocolVersion: new ProtocolVersion(0, 1),
-            LayoutIdentifier: "fixture-layout",
-            KeymapSha256: new string('A', 64),
+            LayoutIdentifier: "sg60-v1-0123456789abcdef0123456789abcdef",
+            KeymapSha256: new string('a', 64),
             FirmwareRevision: "fixture-revision",
             Layers:
             [
@@ -25,6 +25,13 @@ internal static class ProtocolContractTests
         AssertEx.Equal("0.1", manifest.ProtocolVersion.ToString());
         AssertEx.Equal(2, manifest.Layers.Count);
         AssertEx.Equal("Navigation", manifest.Layers[1].Name);
+
+        byte[] manifestJson = LayoutManifestJson.Serialize(manifest);
+        LayoutManifest decodedManifest = LayoutManifestJson.Deserialize(manifestJson);
+        AssertEx.Equal(manifest.SchemaVersion, decodedManifest.SchemaVersion);
+        AssertEx.Equal(manifest.LayoutIdentifier, decodedManifest.LayoutIdentifier);
+        AssertEx.Equal(manifest.KeymapSha256, decodedManifest.KeymapSha256);
+        AssertEx.Equal(manifest.Layers.Count, decodedManifest.Layers.Count);
 
         HelloMessage request = new(HelloMessageCodec.CurrentVersion, HelloMessageType.Hello, 0x01020304, 0xA0B0C0D0);
         byte[] requestBytes = HelloMessageCodec.Encode(request);

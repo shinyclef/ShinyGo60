@@ -3,12 +3,12 @@
 
 #include <stdint.h>
 
-#define SHINYGO60_FEATURE_VERSION "0.2.1-step6"
-#define SHINYGO60_TEST_LAYOUT_IDENTIFIER "00000000-0000-0000-0000-000000000005"
+#define SHINYGO60_FEATURE_VERSION "0.3.0-step8"
 
 struct shinygo60_diagnostic {
     const char *feature_version;
     const char *layout_identifier;
+    const char *keymap_sha256;
     uint32_t identity_checksum;
 };
 

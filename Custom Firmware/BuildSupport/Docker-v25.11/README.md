@@ -34,9 +34,12 @@ The image is pinned to:
 
 - base image `nixpkgs/nix:nixos-23.11@sha256:11c1c37da85b27f1b47a7c0fdff8e3cf970cafaac623312dbcf243c84b8756dd`;
 - MoErgo ZMK tag `v25.11` and commit `11454d23596afbdb06380a1125371b19ab65675c`;
-- final locally validated image ID `sha256:8c05b8af27498f7f42391fa408dfd841fbebfdc70f0d7766a280edd03db98720`.
+- initial Step 3 local image ID `sha256:8c05b8af27498f7f42391fa408dfd841fbebfdc70f0d7766a280edd03db98720`;
+- Step 8 reconstruction image ID `sha256:efc1cd8775ef49246130c2841cc06638f3e243caffd29c3d587292423706bb41`.
 
-The image ID is evidence for this exact local construction. A registry digest must be recorded separately when the prebuilt release image is published.
+Local image IDs are evidence for their exact constructions. They can vary with BuildKit export metadata even when the pinned base, Dockerfile, build context, and
+ZMK source are unchanged. The C# pipeline therefore validates and logs the managed role, ZMK tag, exact source commit, and current local ID. A registry digest must
+be recorded separately when the prebuilt release image is published.
 
 ## Scoped cleanup
 

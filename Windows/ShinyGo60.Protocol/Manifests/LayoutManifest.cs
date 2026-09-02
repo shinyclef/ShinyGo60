@@ -7,4 +7,7 @@ public sealed record LayoutManifest(
     string KeymapSha256,
     string FirmwareRevision,
     IReadOnlyList<LayerDefinition> Layers,
-    DateTimeOffset BuiltAtUtc);
+    DateTimeOffset BuiltAtUtc)
+{
+    public const int CurrentSchemaVersion = 1;
+}

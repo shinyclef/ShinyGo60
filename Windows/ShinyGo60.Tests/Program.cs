@@ -14,6 +14,8 @@ internal static class Program
         [
             new("Protocol manifest contracts", ProtocolContractTests.RunAsync),
             new("USB/Bluetooth transport contract", TransportContractTests.RunAsync),
+            new("Go60 keymap inspection and layout artifacts", KeymapInspectionTests.RunAsync),
+            new("Atomic keymap-to-UF2 pipeline", FirmwareBuildPipelineTests.RunAsync),
             new("Builder process orchestration contract", ProcessContractTests.RunAsync),
             new("Companion shortcut contract", ShortcutContractTests.RunAsync),
             new("Structured diagnostic sink", DiagnosticSinkTests.RunAsync),

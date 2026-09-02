@@ -9,4 +9,7 @@
     <ProjectReference Include="..\ShinyGo60.Diagnostics\ShinyGo60.Diagnostics.csproj" />
     <ProjectReference Include="..\ShinyGo60.Protocol\ShinyGo60.Protocol.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="Fixtures\Keymaps\*.keymap" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

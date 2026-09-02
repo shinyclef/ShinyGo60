@@ -20,3 +20,19 @@ config SHINYGO60_TRANSPORT_SPIKE
     help
       Add the provisional Step 6 Hello transport over USB CDC and encrypted
       Bluetooth GATT on the Go60 central.
+
+config SHINYGO60_LAYOUT_IDENTIFIER
+    string "Generated ShinyGo60 layout identifier"
+    default "00000000-0000-0000-0000-000000000005"
+    depends on SHINYGO60
+    help
+      Layout identifier generated from the exact keymap and protocol version.
+      The default retains the Step 6 diagnostic identity for manual builds;
+      the headless builder supplies the matched production value.
+
+config SHINYGO60_KEYMAP_SHA256
+    string "Generated ShinyGo60 keymap SHA-256"
+    default "0000000000000000000000000000000000000000000000000000000000000000"
+    depends on SHINYGO60
+    help
+      SHA-256 of the exact keymap bytes used by the headless builder.

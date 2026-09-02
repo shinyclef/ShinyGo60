@@ -6,11 +6,12 @@ This workspace contains the Windows 11 tooling and shared application contracts:
 | --- | --- |
 | `ShinyGo60.Diagnostics` | Metadata-only structured diagnostic events and JSON-lines output |
 | `ShinyGo60.Protocol` | Messages, manifests, validation results, and transport contracts |
-| `ShinyGo60.Builder.Core` | Headless firmware pipeline, process orchestration, and generated-workspace contracts |
+| `ShinyGo60.Builder.Core` | Go60 keymap inspection, layout artifacts, headless firmware pipeline, and process/workspace contracts |
+| `ShinyGo60.BuildTool` | Command-line entry point for one explicit keymap-to-UF2 build |
 | `ShinyGo60.Builder` | WPF shell for the eventual double-click firmware builder |
 | `ShinyGo60.Companion.Core` | Connection sessions, reconnect policy, and shortcut contracts |
 | `ShinyGo60.Companion` | WPF shell for configuration and the eventual taskbar-adjacent widget |
-| `ShinyGo60.Tests` | Offline scaffold checks, parser fixtures, protocol vectors, and fake external boundaries |
+| `ShinyGo60.Tests` | Offline contract checks, parser fixtures, protocol vectors, and fake external boundaries |
 | `ShinyGo60.TransportSpike` | Provisional USB/Bluetooth `Hello` diagnostic client for the Step 6 feasibility gate |
 
 The solution targets the SDK pinned in the repository's `global.json` and has no third-party NuGet references. The Windows-specific transport project may restore
@@ -22,7 +23,7 @@ Build everything from the repository root:
 dotnet build '.\Windows\ShinyGo60.sln' --configuration Release --maxcpucount:1
 ```
 
-Run the scaffold checks:
+Run the offline checks:
 
 ```powershell
 dotnet run --project '.\Windows\ShinyGo60.Tests\ShinyGo60.Tests.csproj' --configuration Release
@@ -35,6 +36,21 @@ dotnet run --project '.\Windows\ShinyGo60.TransportSpike\ShinyGo60.TransportSpik
 ```
 
 Use `usb`, `bluetooth`, or `switch` instead of `both` to isolate one path or test USB-to-Bluetooth-to-USB reconnection.
+
+Step 7's `Go60KeymapInspector` validates exported metadata while treating all key behaviors as opaque bytes. `LayoutArtifactGenerator` copies those exact bytes and
+writes `layout-manifest.json` plus `shinygo60_layout.h`; both carry the same deterministic layout identity. The shared `LayoutManifestJson` contract is used for
+strict JSON writing and reading.
+
+Step 8 connects those pieces to the pinned firmware environment. Run a development build with:
+
+```powershell
+dotnet run --project '.\Windows\ShinyGo60.BuildTool\ShinyGo60.BuildTool.csproj' --configuration Release -- '.\path\layout.keymap'
+```
+
+The tool requires the exact installed `shinygo60-builder:v25.11` image, disables container networking by default, uses a new clean workspace, embeds and verifies
+the current identity, and atomically publishes a matched UF2, manifest, and compiler log. It never flashes the keyboard. See
+[`../Custom Firmware/BuildSupport/STEP8_HEADLESS_PIPELINE.md`](../Custom%20Firmware/BuildSupport/STEP8_HEADLESS_PIPELINE.md) for the full contract and current
+acceptance evidence. Step 8 passed two genuine network-disabled builds from the OneDrive project path on 2026-09-02.
 
 Ordinary logs use one JSON object per line. Log event names, revisions, hashes, durations, sizes, exit codes, and sanitized error summaries. Never log keymap
 contents, raw protocol payloads, pairing material, secrets, or stable device identifiers. Full compiler output belongs in the user-requested build log under the

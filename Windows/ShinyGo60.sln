@@ -18,6 +18,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShinyGo60.Tests", "ShinyGo6
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShinyGo60.TransportSpike", "ShinyGo60.TransportSpike\ShinyGo60.TransportSpike.csproj", "{DE02D478-21A4-42E0-890B-813D3D92BDFF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShinyGo60.BuildTool", "ShinyGo60.BuildTool\ShinyGo60.BuildTool.csproj", "{C5A1F418-7E58-4C33-BE53-4096A5D75B48}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -56,6 +58,10 @@ Global
 		{DE02D478-21A4-42E0-890B-813D3D92BDFF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DE02D478-21A4-42E0-890B-813D3D92BDFF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DE02D478-21A4-42E0-890B-813D3D92BDFF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C5A1F418-7E58-4C33-BE53-4096A5D75B48}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C5A1F418-7E58-4C33-BE53-4096A5D75B48}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C5A1F418-7E58-4C33-BE53-4096A5D75B48}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C5A1F418-7E58-4C33-BE53-4096A5D75B48}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

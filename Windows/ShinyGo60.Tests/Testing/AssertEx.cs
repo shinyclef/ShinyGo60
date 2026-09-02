@@ -25,4 +25,34 @@ internal static class AssertEx
             throw new InvalidOperationException("The byte sequences differ.");
         }
     }
+
+    public static TException Throws<TException>(Action action)
+        where TException : Exception
+    {
+        try
+        {
+            action();
+        }
+        catch (TException exception)
+        {
+            return exception;
+        }
+
+        throw new InvalidOperationException($"Expected {typeof(TException).Name}, but no exception was thrown.");
+    }
+
+    public static async ValueTask<TException> ThrowsAsync<TException>(Func<ValueTask> action)
+        where TException : Exception
+    {
+        try
+        {
+            await action();
+        }
+        catch (TException exception)
+        {
+            return exception;
+        }
+
+        throw new InvalidOperationException($"Expected {typeof(TException).Name}, but no exception was thrown.");
+    }
 }
