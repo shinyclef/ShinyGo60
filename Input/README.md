@@ -1,6 +1,6 @@
 # Builder input
 
-The packaged builder will look here when a `.keymap` is not passed directly. Put exactly one MoErgo-exported `.keymap` in this directory before starting the
-builder. Runtime input files are ignored by Git.
+The ShinyGo60 Builder looks here when a `.keymap` is not dropped onto or passed to the executable. Put exactly one MoErgo-exported `.keymap` in this directory,
+then double-click `ShinyGo60.Builder.exe`.
 
-The working builder pipeline is implemented in a later step; this directory currently records the version-one folder convention.
+If this folder contains more than one keymap, the builder asks you to select one instead of guessing. Runtime input files are ignored by Git.

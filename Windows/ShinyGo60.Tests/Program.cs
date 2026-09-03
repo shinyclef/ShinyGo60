@@ -18,6 +18,7 @@ internal static class Program
             new("Go60 keymap inspection and layout artifacts", KeymapInspectionTests.RunAsync),
             new("Atomic keymap-to-UF2 pipeline", FirmwareBuildPipelineTests.RunAsync),
             new("Builder process orchestration contract", ProcessContractTests.RunAsync),
+            new("One-click builder experience", BuilderExperienceTests.RunAsync),
             new("Companion shortcut contract", ShortcutContractTests.RunAsync),
             new("Headless companion lifecycle", CompanionServiceTests.RunAsync),
             new("Companion widget presentation", CompanionPresentationTests.RunAsync),

@@ -4,4 +4,7 @@ namespace ShinyGo60.Companion.Core.Configuration;
 
 public sealed record ResolvedCompanionConfiguration(
     TransportPreference TransportPreference,
-    IReadOnlyList<ShortcutBinding> Shortcuts);
+    IReadOnlyList<ShortcutBinding> Shortcuts)
+{
+    public WidgetTaskbarSelection WidgetTaskbar { get; init; } = WidgetTaskbarSelection.Primary;
+}

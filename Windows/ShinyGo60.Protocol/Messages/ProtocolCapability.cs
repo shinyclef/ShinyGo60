@@ -8,4 +8,5 @@ public enum ProtocolCapability : byte
     PersistentLayer = 1 << 1,
     MomentaryLayer = 1 << 2,
     BatteryTelemetry = 1 << 3,
+    AdaptiveBluetoothLatency = 1 << 4,
 }

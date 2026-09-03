@@ -22,7 +22,7 @@ internal static class ProtocolContractTests
             ],
             BuiltAtUtc: DateTimeOffset.UnixEpoch);
 
-        AssertEx.Equal("1.1", manifest.ProtocolVersion.ToString());
+        AssertEx.Equal("1.2", manifest.ProtocolVersion.ToString());
         AssertEx.Equal(2, manifest.Layers.Count);
         AssertEx.Equal("Navigation", manifest.Layers[1].Name);
 

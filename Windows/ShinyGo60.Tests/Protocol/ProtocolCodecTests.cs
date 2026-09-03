@@ -41,8 +41,8 @@ internal static class ProtocolCodecTests
 
         (string FileName, ProtocolMessage Message)[] vectors =
         [
-            ("hello-request.bytes", new ProtocolMessage.HelloRequest(0x1234, (ProtocolCapability)0x0F, Layout)),
-            ("hello-result.bytes", new ProtocolMessage.HelloResult(0x1234, HelloStatus.Success, (ProtocolCapability)0x0F, 0x89ABCDEF, Layout)),
+            ("hello-request.bytes", new ProtocolMessage.HelloRequest(0x1234, (ProtocolCapability)0x1F, Layout)),
+            ("hello-result.bytes", new ProtocolMessage.HelloResult(0x1234, HelloStatus.Success, (ProtocolCapability)0x1F, 0x89ABCDEF, Layout)),
             ("get-state.bytes", new ProtocolMessage.GetStateRequest(0x89ABCDEF, 0x01020304)),
             ("state-snapshot.bytes", new ProtocolMessage.StateSnapshot(0x89ABCDEF, 0x01020304, snapshotState)),
             ("layer-changed.bytes", new ProtocolMessage.LayerChanged(0x89ABCDEF, 0x11223344, changedState)),
@@ -53,6 +53,10 @@ internal static class ProtocolCodecTests
             ("press-momentary-layer.bytes", new ProtocolMessage.PressMomentaryLayerCommand(0x89ABCDEF, 0x11223345, 43, 3, 20)),
             ("renew-momentary-layer.bytes", new ProtocolMessage.RenewMomentaryLayerCommand(0x89ABCDEF, 0x11223346, 0x11223345, 20)),
             ("release-momentary-layer.bytes", new ProtocolMessage.ReleaseMomentaryLayerCommand(0x89ABCDEF, 0x11223347, 0x11223345)),
+            ("set-bluetooth-connection-mode.bytes", new ProtocolMessage.SetBluetoothConnectionModeCommand(
+                0x89ABCDEF,
+                0x11223348,
+                BluetoothConnectionMode.Interactive)),
             ("command-result.bytes", new ProtocolMessage.CommandResult(0x89ABCDEF, 0x11223344, CommandStatus.Applied, resultState)),
             ("error.bytes", new ProtocolMessage.ErrorMessage(0x89ABCDEF, 0x11223344, 43, ProtocolErrorCode.StaleState, 0x10, 42)),
         ];
@@ -104,6 +108,14 @@ internal static class ProtocolCodecTests
         invalidLease[17] = ProtocolPacketCodec.MaximumLeaseUnits + 1;
         AssertRejected(invalidLease, "An over-limit momentary lease should be rejected.");
 
+        byte[] invalidBluetoothMode = ReadVector("set-bluetooth-connection-mode.bytes");
+        invalidBluetoothMode[12] = 2;
+        AssertRejected(invalidBluetoothMode, "An unknown Bluetooth connection mode should be rejected.");
+
+        byte[] nonZeroBluetoothReserved = ReadVector("set-bluetooth-connection-mode.bytes");
+        nonZeroBluetoothReserved[13] = 1;
+        AssertRejected(nonZeroBluetoothReserved, "A nonzero Bluetooth mode reserved field should be rejected.");
+
         byte[] inconsistentState = ReadVector("state-snapshot.bytes");
         inconsistentState[19] = (byte)LayerStateIndicators.PersistentLayerActive;
         AssertRejected(inconsistentState, "State presence indicators must match their fields.");
@@ -133,6 +145,9 @@ internal static class ProtocolCodecTests
             () => ProtocolPacketCodec.Encode(new ProtocolMessage.PressMomentaryLayerCommand(1, 1, 1, 1, 0)));
         AssertEx.Throws<ArgumentOutOfRangeException>(
             () => ProtocolPacketCodec.Encode(new ProtocolMessage.SetPersistentLayerCommand(1, 1, 1, ProtocolPacketCodec.NoLayer)));
+        AssertEx.Throws<ArgumentOutOfRangeException>(
+            () => ProtocolPacketCodec.Encode(
+                new ProtocolMessage.SetBluetoothConnectionModeCommand(1, 1, (BluetoothConnectionMode)2)));
         AssertEx.Throws<ArgumentException>(
             () => ProtocolPacketCodec.Encode(
                 new ProtocolMessage.BatteryChanged(

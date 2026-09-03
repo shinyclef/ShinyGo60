@@ -12,9 +12,9 @@ at-a-glance status widget at the far left of the taskbar. No firmware change, Do
 ## Configuration application
 
 The WPF settings window resolves every mapping against the manifest used by the flashed firmware. It supports adding and removing mappings, capturing a real
-mouse-generated or keyboard gesture with modifiers, choosing momentary or persistent layer behavior, choosing a target layer, and preferring USB, Bluetooth,
-or automatic transport selection. Save and apply writes the JSON atomically, restarts the runtime in-process, and reports success or failure without requiring
-an application restart.
+mouse-generated or keyboard gesture with modifiers, choosing momentary or persistent layer behavior, choosing a target layer, preferring USB, Bluetooth, or
+automatic transport selection, and placing the widget on all taskbars or one selected display. Save and apply writes the JSON atomically, restarts the runtime
+in-process, and reports success or failure without requiring an application restart.
 
 The start-with-Windows option writes an exact command under the current user's Run key. Its command identifies the executable, starts it with `--background`,
 and supplies the current manifest and settings paths. Background startup creates the taskbar widget without opening the settings window. A named process mutex
@@ -22,9 +22,10 @@ and event keep one companion instance while allowing a second launch to open the
 
 ## Taskbar hosting
 
-The widget is a WPF window whose HWND becomes a child of the primary Windows 11 `Shell_TrayWnd` through `SetParent`. Its popup window style is replaced with the
-child style, and its physical-pixel bounds are calculated relative to the taskbar client area at that taskbar's DPI. It retains no-activate and tool-window
-styles, so clicking the widget can request settings without taking focus merely because its status changes.
+Each widget is a WPF window whose HWND becomes a child of the selected Windows 11 `Shell_TrayWnd` or `Shell_SecondaryTrayWnd` through `SetParent`. The configured
+target can be one display or every taskbar currently exposed by Explorer. Its popup window style is replaced with the child style, and its physical-pixel bounds
+are calculated relative to that taskbar's client area and DPI. It retains no-activate and tool-window styles, so clicking the widget can request settings without
+taking focus merely because its status changes.
 
 This replaces the discarded prototype that placed a topmost borderless window at screen coordinates and polled the foreground window for fullscreen state.
 As a taskbar child, the widget inherits Explorer's visibility and z-order: fullscreen applications and taskbar visibility do not need to be detected by the
@@ -50,7 +51,8 @@ decided after Step 11.
 ## Automated verification
 
 The complete Release solution builds with zero warnings and errors. All thirteen offline suites pass. Step 14-specific checks cover current, stale, and
-disconnected presentation plus taskbar-relative placement for normal DPI, scaled DPI, horizontal, vertical, and unavailable taskbar geometry.
+disconnected presentation; taskbar-relative placement for normal DPI, scaled DPI, horizontal, vertical, and unavailable taskbar geometry; and configuration
+compatibility for primary, all-taskbar, and specific-monitor selection.
 
 An inspection of the running Windows build confirmed:
 
@@ -74,9 +76,12 @@ The configuration and initial widget prototype already passed these checks befor
 - recovery after an Explorer restart with Start11 enabled.
 
 The final taskbar-child build still requires a short visual regression pass for initial launch during fullscreen video, fullscreen show/hide, lost focus while
-fullscreen remains active, widget click, and Explorer restart. Windows sleep remains deferred because this PC does not enter sleep reliably. Multi-monitor and
-nonstandard taskbar-edge policy remain later acceptance work; version one targets the primary Windows 11 taskbar.
+fullscreen remains active, widget click, Explorer restart, and the new one-display/all-taskbars choices. Windows sleep remains deferred because this PC does not
+enter sleep reliably. Nonstandard taskbar-edge policy remains later acceptance work.
 
 Step 14 also exposed an earlier firmware precedence defect in Go to layer: a companion persistent target prevented a physical `&to Home` binding from taking
-effect. The corrected matched UF2 is `Output/ShinyGo60-20260902-155232-3fd12c2c/ShinyGo60-3fd12c2c.uf2`. After flashing both halves, its focused regression test
-must select a non-Home layer through the companion and then return through the layout's physical `&to Home` key over USB and Bluetooth.
+effect. The corrected matched UF2 is `Output/ShinyGo60-20260902-155232-3fd12c2c/ShinyGo60-3fd12c2c.uf2`. The focused physical regression passed: a companion
+persistent selection no longer prevents the layout's physical `&to Home` key from returning Home.
+
+The follow-on [adaptive Bluetooth latency work](ADAPTIVE_BLUETOOTH_LATENCY.md) changes firmware and advances the shared protocol to 1.2; it is intentionally
+tracked separately from the Step 14 taskbar implementation.

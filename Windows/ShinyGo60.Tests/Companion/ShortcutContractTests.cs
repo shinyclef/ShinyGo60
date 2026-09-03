@@ -12,6 +12,7 @@ internal static class ShortcutContractTests
     public static async ValueTask RunAsync()
     {
         VerifyConfigurationResolution();
+        VerifyWidgetTaskbarConfiguration();
         VerifyGestureParsing();
         VerifySyntheticF23Sequence();
         VerifyHeldKeyAcrossSessionLoss();
@@ -32,6 +33,21 @@ internal static class ShortcutContractTests
         AssertEx.Equal(ShortcutActionKind.MomentaryLayer, binding.Action);
         AssertEx.Equal((byte)1, binding.TargetLayerId);
         AssertEx.Equal("Navigation", binding.TargetLayerName);
+        AssertEx.Equal(WidgetTaskbarSelection.Primary, configuration.WidgetTaskbar);
+    }
+
+    private static void VerifyWidgetTaskbarConfiguration()
+    {
+        ResolvedCompanionConfiguration allTaskbars = CompanionConfigurationJson.DeserializeAndResolve(
+            Encoding.UTF8.GetBytes(ConfigurationWithAllTaskbars),
+            CreateManifest());
+        AssertEx.Equal(WidgetTaskbarSelection.All, allTaskbars.WidgetTaskbar);
+
+        ResolvedCompanionConfiguration secondDisplay = CompanionConfigurationJson.DeserializeAndResolve(
+            Encoding.UTF8.GetBytes(ConfigurationWithSecondDisplay),
+            CreateManifest());
+        AssertEx.Equal(WidgetTaskbarMode.SpecificMonitor, secondDisplay.WidgetTaskbar.Mode);
+        AssertEx.Equal(@"\\.\DISPLAY2", secondDisplay.WidgetTaskbar.MonitorId);
     }
 
     private static void VerifyGestureParsing()
@@ -120,6 +136,23 @@ internal static class ShortcutContractTests
         string missingShortcut = ValidConfiguration.Replace("\"shortcut\": \"F23\"", "\"shortcut\": null", StringComparison.Ordinal);
         AssertEx.Throws<InvalidDataException>(
             () => CompanionConfigurationJson.DeserializeAndResolve(Encoding.UTF8.GetBytes(missingShortcut), CreateManifest()));
+
+        CompanionConfiguration missingMonitor = new(
+            CompanionConfiguration.CurrentSchemaVersion,
+            TransportPreference.Automatic,
+            [new ShortcutConfiguration("F23", ShortcutActionKind.MomentaryLayer, "Navigation")])
+        {
+            WidgetTaskbar = new WidgetTaskbarSelection(WidgetTaskbarMode.SpecificMonitor),
+        };
+        AssertEx.Throws<InvalidDataException>(
+            () => CompanionConfigurationJson.Resolve(missingMonitor, CreateManifest()));
+
+        CompanionConfiguration monitorOnAll = missingMonitor with
+        {
+            WidgetTaskbar = new WidgetTaskbarSelection(WidgetTaskbarMode.All, @"\\.\DISPLAY2"),
+        };
+        AssertEx.Throws<InvalidDataException>(
+            () => CompanionConfigurationJson.Resolve(monitorOnAll, CreateManifest()));
     }
 
     private static async ValueTask VerifyConfigurationWriteAsync()
@@ -131,7 +164,10 @@ internal static class ShortcutContractTests
         CompanionConfiguration configuration = new(
             CompanionConfiguration.CurrentSchemaVersion,
             TransportPreference.Bluetooth,
-            [new ShortcutConfiguration("F23", ShortcutActionKind.MomentaryLayer, "Navigation")]);
+            [new ShortcutConfiguration("F23", ShortcutActionKind.MomentaryLayer, "Navigation")])
+        {
+            WidgetTaskbar = WidgetTaskbarSelection.All,
+        };
 
         try
         {
@@ -142,6 +178,7 @@ internal static class ShortcutContractTests
 
             AssertEx.Equal(TransportPreference.Bluetooth, resolved.TransportPreference);
             AssertEx.Equal("F23", resolved.Shortcuts[0].Gesture.ToString());
+            AssertEx.Equal(WidgetTaskbarSelection.All, resolved.WidgetTaskbar);
             AssertEx.Equal(0, Directory.GetFiles(temporaryDirectory, "*.tmp").Length);
         }
         finally
@@ -174,6 +211,36 @@ internal static class ShortcutContractTests
         {
           "schemaVersion": 1,
           "transportPreference": "automatic",
+          "shortcuts": [
+            {
+              "shortcut": "F23",
+              "action": "momentaryLayer",
+              "targetLayer": "Navigation"
+            }
+          ]
+        }
+        """;
+
+    private const string ConfigurationWithAllTaskbars = """
+        {
+          "schemaVersion": 1,
+          "transportPreference": "automatic",
+          "widgetTaskbar": { "mode": "all" },
+          "shortcuts": [
+            {
+              "shortcut": "F23",
+              "action": "momentaryLayer",
+              "targetLayer": "Navigation"
+            }
+          ]
+        }
+        """;
+
+    private const string ConfigurationWithSecondDisplay = """
+        {
+          "schemaVersion": 1,
+          "transportPreference": "automatic",
+          "widgetTaskbar": { "mode": "specificMonitor", "monitorId": "\\\\.\\DISPLAY2" },
           "shortcuts": [
             {
               "shortcut": "F23",

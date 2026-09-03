@@ -12,7 +12,8 @@
 #define LAYOUT_IDENTIFIER_HEX_LENGTH 32U
 #define SUPPORTED_CAPABILITIES \
     (SHINYGO60_CAPABILITY_STATE_TELEMETRY | SHINYGO60_CAPABILITY_PERSISTENT_LAYER | \
-     SHINYGO60_CAPABILITY_MOMENTARY_LAYER | SHINYGO60_CAPABILITY_BATTERY_TELEMETRY)
+     SHINYGO60_CAPABILITY_MOMENTARY_LAYER | SHINYGO60_CAPABILITY_BATTERY_TELEMETRY | \
+     SHINYGO60_CAPABILITY_ADAPTIVE_BLUETOOTH_LATENCY)
 #define EVENT_RETRY_DELAY K_MSEC(20)
 
 BUILD_ASSERT(sizeof(CONFIG_SHINYGO60_LAYOUT_IDENTIFIER) - 1U ==
@@ -121,6 +122,7 @@ static uint32_t start_session(enum shinygo60_transport transport, uint8_t capabi
     command_cache_populated = false;
     latest_command_id = 0U;
     shinygo60_layer_control_begin_session(session_id);
+    shinygo60_ble_reset_connection_mode();
     return session_id;
 }
 
@@ -357,6 +359,11 @@ static bool read_command_context(
         context->command_id = request->payload.momentary_command.command_id;
         context->required_capability = SHINYGO60_CAPABILITY_MOMENTARY_LAYER;
         return true;
+    case SHINYGO60_MESSAGE_SET_BLUETOOTH_CONNECTION_MODE:
+        context->session_id = request->payload.bluetooth_mode_command.session_id;
+        context->command_id = request->payload.bluetooth_mode_command.command_id;
+        context->required_capability = SHINYGO60_CAPABILITY_ADAPTIVE_BLUETOOTH_LATENCY;
+        return true;
     default:
         return false;
     }
@@ -386,6 +393,31 @@ static struct shinygo60_message execute_control_command(
         transport, context->session_id, context->required_capability);
     if (session_error != 0U) {
         return create_command_error(request, context, session_error, context->required_capability);
+    }
+
+    if (request->type == SHINYGO60_MESSAGE_SET_BLUETOOTH_CONNECTION_MODE) {
+        if (transport != SHINYGO60_TRANSPORT_BLUETOOTH) {
+            return create_command_error(
+                request,
+                context,
+                SHINYGO60_ERROR_CAPABILITY_UNAVAILABLE,
+                SHINYGO60_CAPABILITY_ADAPTIVE_BLUETOOTH_LATENCY);
+        }
+
+        enum shinygo60_bluetooth_mode_result mode_result = shinygo60_ble_set_connection_mode(
+            (enum shinygo60_bluetooth_connection_mode)
+                request->payload.bluetooth_mode_command.mode);
+        switch (mode_result) {
+        case SHINYGO60_BLUETOOTH_MODE_APPLIED:
+            return create_command_result(
+                context->session_id, context->command_id, SHINYGO60_COMMAND_APPLIED);
+        case SHINYGO60_BLUETOOTH_MODE_NO_CHANGE:
+            return create_command_result(
+                context->session_id, context->command_id, SHINYGO60_COMMAND_NO_CHANGE);
+        case SHINYGO60_BLUETOOTH_MODE_UNAVAILABLE:
+        default:
+            return create_command_error(request, context, SHINYGO60_ERROR_INTERNAL, 0U);
+        }
     }
 
     enum shinygo60_layer_control_result result;
@@ -556,6 +588,7 @@ bool shinygo60_protocol_handle(
     case SHINYGO60_MESSAGE_PRESS_MOMENTARY_LAYER:
     case SHINYGO60_MESSAGE_RENEW_MOMENTARY_LAYER:
     case SHINYGO60_MESSAGE_RELEASE_MOMENTARY_LAYER:
+    case SHINYGO60_MESSAGE_SET_BLUETOOTH_CONNECTION_MODE:
         handled = handle_control_command(transport, &decoded, request, response);
         break;
     default: {
@@ -705,6 +738,10 @@ void shinygo60_protocol_transport_disconnected(enum shinygo60_transport transpor
         shinygo60_layer_control_end_session(ended_session_id);
     }
     k_mutex_unlock(&command_mutex);
+
+    if (transport == SHINYGO60_TRANSPORT_BLUETOOTH) {
+        shinygo60_ble_reset_connection_mode();
+    }
 }
 
 static bool send_event_packet(

@@ -181,12 +181,25 @@
 
                 <Grid Grid.Row="3" Margin="0,10,0,0">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <Button HorizontalAlignment="Left" Click="OnAddShortcutClick" Content="Add mapping" />
+                    <StackPanel Grid.Column="1"
+                                Margin="16,0"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Center"
+                                Orientation="Horizontal">
+                        <TextBlock Margin="0,0,8,0" VerticalAlignment="Center" Foreground="#657080" Text="Widget:" />
+                        <ComboBox x:Name="WidgetTaskbarValue"
+                                  Width="245"
+                                  DisplayMemberPath="Label"
+                                  ItemsSource="{Binding WidgetTaskbarOptions}"
+                                  ToolTip="Windows must show a taskbar on each display selected here." />
+                    </StackPanel>
                     <CheckBox x:Name="StartWithWindowsValue"
-                              Grid.Column="1"
+                              Grid.Column="2"
                               VerticalAlignment="Center"
                               Content="Start with Windows" />
                 </Grid>

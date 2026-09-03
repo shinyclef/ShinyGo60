@@ -14,7 +14,8 @@ public static class ProtocolPacketCodec
         ProtocolCapability.StateTelemetry |
         ProtocolCapability.PersistentLayer |
         ProtocolCapability.MomentaryLayer |
-        ProtocolCapability.BatteryTelemetry;
+        ProtocolCapability.BatteryTelemetry |
+        ProtocolCapability.AdaptiveBluetoothLatency;
     private static ReadOnlySpan<byte> Magic => "SG"u8;
 
     public static byte[] Encode(ProtocolMessage message)
@@ -96,6 +97,13 @@ public static class ProtocolPacketCodec
                 BinaryPrimitives.WriteUInt32LittleEndian(payload[4..], command.CommandId);
                 BinaryPrimitives.WriteUInt32LittleEndian(payload[8..], command.ActivationId);
                 break;
+            case ProtocolMessage.SetBluetoothConnectionModeCommand command:
+                RequireSessionAndId(command.SessionId, command.CommandId);
+                ValidateBluetoothConnectionMode(command.Mode);
+                BinaryPrimitives.WriteUInt32LittleEndian(payload, command.SessionId);
+                BinaryPrimitives.WriteUInt32LittleEndian(payload[4..], command.CommandId);
+                payload[8] = (byte)command.Mode;
+                break;
             case ProtocolMessage.CommandResult result:
                 RequireSessionAndId(result.SessionId, result.CommandId);
                 ValidateCommandStatus(result.Status);
@@ -147,6 +155,7 @@ public static class ProtocolPacketCodec
             ProtocolMessageType.PressMomentaryLayer => TryDecodePressMomentary(payload, out message),
             ProtocolMessageType.RenewMomentaryLayer => TryDecodeRenewMomentary(payload, out message),
             ProtocolMessageType.ReleaseMomentaryLayer => TryDecodeReleaseMomentary(payload, out message),
+            ProtocolMessageType.SetBluetoothConnectionMode => TryDecodeSetBluetoothConnectionMode(payload, out message),
             ProtocolMessageType.CommandResult => TryDecodeCommandResult(payload, out message),
             ProtocolMessageType.Error => TryDecodeError(payload, out message),
             _ => false,
@@ -355,6 +364,21 @@ public static class ProtocolPacketCodec
         return true;
     }
 
+    private static bool TryDecodeSetBluetoothConnectionMode(ReadOnlySpan<byte> payload, out ProtocolMessage? message)
+    {
+        uint sessionId = BinaryPrimitives.ReadUInt32LittleEndian(payload);
+        uint commandId = BinaryPrimitives.ReadUInt32LittleEndian(payload[4..]);
+        BluetoothConnectionMode mode = (BluetoothConnectionMode)payload[8];
+        if (sessionId == 0 || commandId == 0 || !Enum.IsDefined(mode) || !IsZero(payload[9..]))
+        {
+            message = null;
+            return false;
+        }
+
+        message = new ProtocolMessage.SetBluetoothConnectionModeCommand(sessionId, commandId, mode);
+        return true;
+    }
+
     private static bool TryDecodeCommandResult(ReadOnlySpan<byte> payload, out ProtocolMessage? message)
     {
         uint sessionId = BinaryPrimitives.ReadUInt32LittleEndian(payload);
@@ -529,6 +553,14 @@ public static class ProtocolPacketCodec
         if (!Enum.IsDefined(status))
         {
             throw new ArgumentOutOfRangeException(nameof(status));
+        }
+    }
+
+    private static void ValidateBluetoothConnectionMode(BluetoothConnectionMode mode)
+    {
+        if (!Enum.IsDefined(mode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(mode));
         }
     }
 

@@ -6,18 +6,51 @@ namespace ShinyGo60.Platform.Windows.Shell;
 
 public sealed class TaskbarGeometryProvider : ITaskbarWindowProvider
 {
+    private const string PrimaryTaskbarClass = "Shell_TrayWnd";
+    private const string SecondaryTaskbarClass = "Shell_SecondaryTrayWnd";
+    private const string DisplayDevicePrefix = @"\\.\DISPLAY";
     private const uint GetTaskbarPositionMessage = 5;
     private const uint DefaultDpi = 96;
+    private const uint MonitorInformationPrimary = 1;
     private const uint MonitorDefaultToNearest = 2;
 
     public TaskbarWindowInfo? GetCurrent()
     {
-        IntPtr taskbar = NativeMethods.FindWindow("Shell_TrayWnd", null);
-        if (taskbar == IntPtr.Zero)
+        IntPtr taskbar = NativeMethods.FindWindow(PrimaryTaskbarClass, null);
+        return taskbar == IntPtr.Zero ? null : ReadTaskbar(taskbar, useAppBarPosition: true);
+    }
+
+    public IReadOnlyList<TaskbarWindowInfo> GetAll()
+    {
+        List<TaskbarWindowInfo> taskbars = [];
+        IntPtr primaryTaskbar = NativeMethods.FindWindow(PrimaryTaskbarClass, null);
+        if (primaryTaskbar != IntPtr.Zero)
         {
-            return null;
+            taskbars.Add(ReadTaskbar(primaryTaskbar, useAppBarPosition: true));
         }
 
+        IntPtr previousTaskbar = IntPtr.Zero;
+        while (true)
+        {
+            IntPtr taskbar = NativeMethods.FindWindowEx(
+                IntPtr.Zero,
+                previousTaskbar,
+                SecondaryTaskbarClass,
+                null);
+            if (taskbar == IntPtr.Zero)
+            {
+                break;
+            }
+
+            taskbars.Add(ReadTaskbar(taskbar, useAppBarPosition: false));
+            previousTaskbar = taskbar;
+        }
+
+        return taskbars;
+    }
+
+    private static TaskbarWindowInfo ReadTaskbar(IntPtr taskbar, bool useAppBarPosition)
+    {
         if (!NativeMethods.GetWindowRect(taskbar, out NativeRectangle windowRectangle))
         {
             throw new Win32Exception(Marshal.GetLastWin32Error(), "Windows could not read the taskbar bounds.");
@@ -28,15 +61,24 @@ public sealed class TaskbarGeometryProvider : ITaskbarWindowProvider
             throw new Win32Exception(Marshal.GetLastWin32Error(), "Windows could not read the taskbar client bounds.");
         }
 
-        NativeAppBarData appBarData = new()
+        bool hasAppBarPosition = false;
+        NativeAppBarData appBarData = default;
+        if (useAppBarPosition)
         {
-            Size = (uint)Marshal.SizeOf<NativeAppBarData>(),
-            Window = taskbar,
-        };
-        bool hasAppBarPosition = NativeMethods.SHAppBarMessage(GetTaskbarPositionMessage, ref appBarData) != UIntPtr.Zero;
+            appBarData = new NativeAppBarData
+            {
+                Size = (uint)Marshal.SizeOf<NativeAppBarData>(),
+                Window = taskbar,
+            };
+            hasAppBarPosition = NativeMethods.SHAppBarMessage(GetTaskbarPositionMessage, ref appBarData) != UIntPtr.Zero;
+        }
 
         IntPtr monitor = NativeMethods.MonitorFromWindow(taskbar, MonitorDefaultToNearest);
-        NativeMonitorInformation monitorInformation = new() { Size = Marshal.SizeOf<NativeMonitorInformation>() };
+        NativeMonitorInformation monitorInformation = new()
+        {
+            Size = Marshal.SizeOf<NativeMonitorInformation>(),
+            DeviceName = string.Empty,
+        };
         if (monitor == IntPtr.Zero || !NativeMethods.GetMonitorInfo(monitor, ref monitorInformation))
         {
             throw new Win32Exception(Marshal.GetLastWin32Error(), "Windows could not read the taskbar monitor bounds.");
@@ -44,12 +86,28 @@ public sealed class TaskbarGeometryProvider : ITaskbarWindowProvider
 
         PixelRectangle taskbarBounds = windowRectangle.ToPixelRectangle();
         PixelRectangle monitorBounds = monitorInformation.Monitor.ToPixelRectangle();
+        bool isPrimary = (monitorInformation.Flags & MonitorInformationPrimary) != 0;
         uint dpi = NativeMethods.GetDpiForWindow(taskbar);
         TaskbarGeometry geometry = new(
             clientRectangle.ToPixelRectangle(),
             hasAppBarPosition ? ConvertEdge(appBarData.Edge) : DetermineEdge(taskbarBounds, monitorBounds),
             dpi == 0 ? DefaultDpi : dpi);
-        return new TaskbarWindowInfo(taskbar, geometry);
+        return new TaskbarWindowInfo(taskbar, geometry)
+        {
+            MonitorId = monitorInformation.DeviceName,
+            DisplayName = CreateDisplayName(monitorInformation.DeviceName, monitorBounds, isPrimary),
+            IsPrimary = isPrimary,
+        };
+    }
+
+    private static string CreateDisplayName(string monitorId, PixelRectangle monitorBounds, bool isPrimary)
+    {
+        string displayNumber = monitorId.StartsWith(DisplayDevicePrefix, StringComparison.OrdinalIgnoreCase)
+            ? monitorId[DisplayDevicePrefix.Length..]
+            : monitorId;
+        string displayName = string.IsNullOrWhiteSpace(displayNumber) ? "Display" : $"Display {displayNumber}";
+        string primaryLabel = isPrimary ? " (primary)" : string.Empty;
+        return $"{displayName}{primaryLabel} — {monitorBounds.Width} × {monitorBounds.Height}";
     }
 
     private static TaskbarEdge ConvertEdge(uint edge)
@@ -92,13 +150,16 @@ public sealed class TaskbarGeometryProvider : ITaskbarWindowProvider
         }
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct NativeMonitorInformation
     {
         public int Size;
         public NativeRectangle Monitor;
         public NativeRectangle WorkArea;
         public uint Flags;
+
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string DeviceName;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -116,6 +177,13 @@ public sealed class TaskbarGeometryProvider : ITaskbarWindowProvider
     {
         [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         public static extern IntPtr FindWindow(string className, string? windowName);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern IntPtr FindWindowEx(
+            IntPtr parent,
+            IntPtr childAfter,
+            string className,
+            string? windowName);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]

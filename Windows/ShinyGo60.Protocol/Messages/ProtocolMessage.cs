@@ -59,6 +59,12 @@ public abstract record ProtocolMessage(ProtocolMessageType Type)
     public sealed record ReleaseMomentaryLayerCommand(uint SessionId, uint CommandId, uint ActivationId)
         : ProtocolMessage(ProtocolMessageType.ReleaseMomentaryLayer);
 
+    public sealed record SetBluetoothConnectionModeCommand(
+        uint SessionId,
+        uint CommandId,
+        BluetoothConnectionMode Mode)
+        : ProtocolMessage(ProtocolMessageType.SetBluetoothConnectionMode);
+
     public sealed record CommandResult(
         uint SessionId,
         uint CommandId,

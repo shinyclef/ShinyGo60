@@ -2,6 +2,7 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using ShinyGo60.Companion.Core.Configuration;
+using ShinyGo60.Companion.Core.Connections;
 using ShinyGo60.Companion.Core.Presentation;
 using ShinyGo60.Companion.Core.Reconnection;
 using ShinyGo60.Companion.Core.Sessions;
@@ -11,6 +12,7 @@ using ShinyGo60.Platform.Windows.Input;
 using ShinyGo60.Platform.Windows.Shell;
 using ShinyGo60.Platform.Windows.Transports;
 using ShinyGo60.Protocol.Manifests;
+using ShinyGo60.Protocol.Messages;
 
 namespace ShinyGo60.Companion;
 
@@ -24,8 +26,9 @@ public partial class App : Application, IDisposable
     private CompanionApplicationOptions? applicationOptions;
     private LayoutManifest? manifest;
     private MainWindow? settingsWindow;
-    private TaskbarWidgetWindow? widgetWindow;
+    private TaskbarGeometryProvider? taskbarProvider;
     private TaskbarWidgetController? widgetController;
+    private WindowsUserActivityMonitor? userActivityMonitor;
     private bool showSettingsWhenReady;
     private bool disposed;
 
@@ -53,23 +56,28 @@ public partial class App : Application, IDisposable
                 this.applicationOptions.ConfigurationPath,
                 this.manifest);
             string diagnosticPath = this.OpenDiagnosticLog();
+            this.taskbarProvider = new TaskbarGeometryProvider();
+            this.userActivityMonitor = new WindowsUserActivityMonitor(
+                new BluetoothConnectionModePolicy(BluetoothConnectionModePolicy.DefaultIdleThreshold));
+            this.userActivityMonitor.ModeChanged += this.OnBluetoothConnectionModeChanged;
+            this.userActivityMonitor.Start();
 
             this.settingsWindow = new MainWindow(
                 this.manifest,
                 configuration,
+                this.GetWidgetTaskbarOptions(),
                 StartupRegistration.IsEnabled(),
                 diagnosticPath);
             this.settingsWindow.ReconnectRequested += this.OnReconnectRequested;
             this.settingsWindow.SettingsSaveRequested += this.OnSettingsSaveRequested;
             this.settingsWindow.ExitRequested += this.OnExitRequested;
 
-            this.widgetWindow = new TaskbarWidgetWindow();
-            this.widgetWindow.SettingsRequested += this.OnWidgetSettingsRequested;
-            this.widgetWindow.UpdateDisplayState(CompanionStatusPresenter.Present(CompanionStatus.Stopped));
             this.widgetController = new TaskbarWidgetController(
-                this.widgetWindow,
-                new TaskbarGeometryProvider());
+                this.taskbarProvider,
+                configuration.WidgetTaskbar);
+            this.widgetController.SettingsRequested += this.OnWidgetSettingsRequested;
             this.widgetController.PlacementFailed += this.OnWidgetPlacementFailed;
+            this.widgetController.UpdateDisplayState(CompanionStatusPresenter.Present(CompanionStatus.Stopped));
             this.widgetController.Start();
 
             if (!this.applicationOptions.StartInBackground || this.showSettingsWhenReady)
@@ -105,19 +113,22 @@ public partial class App : Application, IDisposable
 
         this.StopRuntimeAsync().AsTask().GetAwaiter().GetResult();
 
+        if (this.userActivityMonitor is not null)
+        {
+            this.userActivityMonitor.ModeChanged -= this.OnBluetoothConnectionModeChanged;
+            this.userActivityMonitor.Dispose();
+            this.userActivityMonitor = null;
+        }
+
         if (this.widgetController is not null)
         {
+            this.widgetController.SettingsRequested -= this.OnWidgetSettingsRequested;
             this.widgetController.PlacementFailed -= this.OnWidgetPlacementFailed;
             this.widgetController.Dispose();
             this.widgetController = null;
         }
 
-        if (this.widgetWindow is not null)
-        {
-            this.widgetWindow.SettingsRequested -= this.OnWidgetSettingsRequested;
-            this.widgetWindow.Close();
-            this.widgetWindow = null;
-        }
+        this.taskbarProvider = null;
 
         if (this.settingsWindow is not null)
         {
@@ -158,6 +169,8 @@ public partial class App : Application, IDisposable
             ExponentialReconnectDelayPolicy.Default,
             this.diagnosticSink);
         this.companionService.StatusChanged += this.OnCompanionStatusChanged;
+        this.companionService.SetBluetoothConnectionMode(
+            this.userActivityMonitor?.CurrentMode ?? BluetoothConnectionMode.Interactive);
 
         this.shortcutSource = new GlobalKeyboardShortcutSource(configuration.Shortcuts.Select(binding => binding.Gesture));
         this.shortcutSource.KeyChanged += this.OnShortcutKeyChanged;
@@ -206,7 +219,7 @@ public partial class App : Application, IDisposable
         this.Dispatcher.BeginInvoke(() =>
         {
             this.settingsWindow?.UpdateStatus(e.Status);
-            this.widgetWindow?.UpdateDisplayState(CompanionStatusPresenter.Present(e.Status));
+            this.widgetController?.UpdateDisplayState(CompanionStatusPresenter.Present(e.Status));
         });
     }
 
@@ -226,6 +239,12 @@ public partial class App : Application, IDisposable
     {
         _ = sender;
         this.settingsWindow?.UpdateShortcutFailure(e.Exception.Message);
+    }
+
+    private void OnBluetoothConnectionModeChanged(object? sender, BluetoothConnectionModeChangedEventArgs e)
+    {
+        _ = sender;
+        this.companionService?.SetBluetoothConnectionMode(e.Mode);
     }
 
     private void OnReconnectRequested(object? sender, EventArgs e)
@@ -255,6 +274,7 @@ public partial class App : Application, IDisposable
                 GetApplicationExecutablePath(),
                 this.applicationOptions.ManifestPath,
                 this.applicationOptions.ConfigurationPath);
+            this.widgetController?.SetSelection(configuration.WidgetTaskbar);
 
             await this.StopRuntimeAsync();
             await this.StartRuntimeAsync(configuration);
@@ -289,6 +309,7 @@ public partial class App : Application, IDisposable
             return;
         }
 
+        this.settingsWindow.UpdateWidgetTaskbarOptions(this.GetWidgetTaskbarOptions());
         this.settingsWindow.Show();
         if (this.settingsWindow.WindowState == WindowState.Minimized)
         {
@@ -296,6 +317,54 @@ public partial class App : Application, IDisposable
         }
 
         this.settingsWindow.Activate();
+    }
+
+    private List<WidgetTaskbarOption> GetWidgetTaskbarOptions()
+    {
+        List<WidgetTaskbarOption> options =
+        [
+            new WidgetTaskbarOption("All taskbars", WidgetTaskbarSelection.All),
+        ];
+        if (this.taskbarProvider is null)
+        {
+            options.Add(new WidgetTaskbarOption("Primary taskbar", WidgetTaskbarSelection.Primary, IsPrimary: true));
+            return options;
+        }
+
+        try
+        {
+            foreach (TaskbarWindowInfo taskbar in this.taskbarProvider.GetAll())
+            {
+                if (string.IsNullOrWhiteSpace(taskbar.MonitorId))
+                {
+                    if (taskbar.IsPrimary)
+                    {
+                        options.Add(new WidgetTaskbarOption("Primary taskbar", WidgetTaskbarSelection.Primary, IsPrimary: true));
+                    }
+
+                    continue;
+                }
+
+                string label = string.IsNullOrWhiteSpace(taskbar.DisplayName)
+                    ? taskbar.MonitorId
+                    : taskbar.DisplayName;
+                options.Add(new WidgetTaskbarOption(
+                    label,
+                    WidgetTaskbarSelection.ForMonitor(taskbar.MonitorId),
+                    taskbar.IsPrimary));
+            }
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            _ = exception;
+        }
+
+        if (!options.Any(option => option.IsPrimary))
+        {
+            options.Add(new WidgetTaskbarOption("Primary taskbar", WidgetTaskbarSelection.Primary, IsPrimary: true));
+        }
+
+        return options;
     }
 
     private void OnExitRequested(object? sender, EventArgs e)

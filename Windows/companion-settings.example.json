@@ -7,5 +7,9 @@
       "action": "momentaryLayer",
       "targetLayer": "Keypad"
     }
-  ]
+  ],
+  "widgetTaskbar": {
+    "mode": "all",
+    "monitorId": null
+  }
 }

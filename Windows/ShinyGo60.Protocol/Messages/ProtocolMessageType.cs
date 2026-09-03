@@ -14,6 +14,7 @@ public enum ProtocolMessageType : byte
     PressMomentaryLayer = 0x11,
     RenewMomentaryLayer = 0x12,
     ReleaseMomentaryLayer = 0x13,
+    SetBluetoothConnectionMode = 0x14,
     CommandResult = 0x20,
     Error = 0x7F,
 }

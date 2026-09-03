@@ -24,7 +24,8 @@ public sealed class CompanionService : ICompanionSession
         ProtocolCapability.StateTelemetry |
         ProtocolCapability.PersistentLayer |
         ProtocolCapability.MomentaryLayer |
-        ProtocolCapability.BatteryTelemetry;
+        ProtocolCapability.BatteryTelemetry |
+        ProtocolCapability.AdaptiveBluetoothLatency;
 
     private readonly LayoutManifest manifest;
     private readonly ResolvedCompanionConfiguration configuration;
@@ -37,7 +38,9 @@ public sealed class CompanionService : ICompanionSession
     private readonly object lifecycleSync = new();
     private readonly object shortcutSync = new();
     private readonly object statusSync = new();
+    private readonly object bluetoothModeSync = new();
     private CompanionStatus currentStatus = CompanionStatus.Stopped;
+    private BluetoothConnectionMode desiredBluetoothConnectionMode = BluetoothConnectionMode.Interactive;
     private Task? runTask;
     private long generation;
     private bool acceptingShortcuts;
@@ -198,6 +201,32 @@ public sealed class CompanionService : ICompanionSession
         }
     }
 
+    public void SetBluetoothConnectionMode(BluetoothConnectionMode mode)
+    {
+        if (!Enum.IsDefined(mode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(mode));
+        }
+
+        lock (this.bluetoothModeSync)
+        {
+            if (this.desiredBluetoothConnectionMode == mode)
+            {
+                return;
+            }
+
+            this.desiredBluetoothConnectionMode = mode;
+        }
+
+        long sessionGeneration;
+        lock (this.shortcutSync)
+        {
+            sessionGeneration = this.generation;
+        }
+
+        this.events.Writer.TryWrite(new BluetoothConnectionModeChangedEvent(sessionGeneration, mode));
+    }
+
     public async ValueTask DisposeAsync()
     {
         lock (this.lifecycleSync)
@@ -334,6 +363,7 @@ public sealed class CompanionService : ICompanionSession
         LayerCommandStateMachine commandMachine = new(this.manifest);
         BatteryStateTracker batteryTracker = new(this.manifest);
         Dictionary<ShortcutBinding, uint> momentaryActivations = [];
+        BluetoothConnectionMode? appliedBluetoothConnectionMode = null;
         bool connected = false;
 
         try
@@ -356,6 +386,19 @@ public sealed class CompanionService : ICompanionSession
 
             await this.OpenProtocolSessionAsync(transport, commandMachine, batteryTracker).ConfigureAwait(false);
             connected = true;
+            if (kind == TransportKind.Bluetooth)
+            {
+                BluetoothConnectionMode initialMode = this.GetDesiredBluetoothConnectionMode();
+                commandMachine.QueueBluetoothConnectionMode(initialMode);
+                await this.DrainCommandsAsync(
+                    transport,
+                    commandMachine,
+                    batteryTracker,
+                    momentaryActivations,
+                    kind).ConfigureAwait(false);
+                appliedBluetoothConnectionMode = initialMode;
+            }
+
             this.ActivateShortcutGeneration(sessionGeneration);
             this.UpdateConnectedStatus(kind, commandMachine, batteryTracker, $"Connected over {kind}");
             await this.WriteDiagnosticAsync(
@@ -379,6 +422,7 @@ public sealed class CompanionService : ICompanionSession
                 switch (serviceEvent)
                 {
                     case StopRequestedEvent:
+                        QueueBluetoothPowerSaving(kind, commandMachine);
                         await this.TryReleaseMomentaryActivationsAsync(
                             transport,
                             commandMachine,
@@ -388,6 +432,7 @@ public sealed class CompanionService : ICompanionSession
                             "stop").ConfigureAwait(false);
                         return new SessionAttemptResult(SessionOutcome.Stop, null, connected);
                     case ReconnectRequestedEvent:
+                        QueueBluetoothPowerSaving(kind, commandMachine);
                         await this.TryReleaseMomentaryActivationsAsync(
                             transport,
                             commandMachine,
@@ -413,6 +458,15 @@ public sealed class CompanionService : ICompanionSession
                         break;
                     case RenewMomentariesEvent:
                         this.QueueMomentaryRenewals(commandMachine, momentaryActivations);
+                        break;
+                    case BluetoothConnectionModeChangedEvent modeChanged
+                        when kind == TransportKind.Bluetooth &&
+                             modeChanged.Mode == this.GetDesiredBluetoothConnectionMode() &&
+                             modeChanged.Mode != appliedBluetoothConnectionMode:
+                        commandMachine.QueueBluetoothConnectionMode(modeChanged.Mode);
+                        appliedBluetoothConnectionMode = modeChanged.Mode;
+                        break;
+                    case BluetoothConnectionModeChangedEvent:
                         break;
                     case BluetoothHealthCheckEvent
                         when Stopwatch.GetElapsedTime(lastTransportActivity) >= this.options.BluetoothHealthCheckInterval:
@@ -616,6 +670,16 @@ public sealed class CompanionService : ICompanionSession
         foreach (uint activationId in momentaryActivations.Values)
         {
             commandMachine.QueueMomentaryRenewal(activationId, this.options.MomentaryLeaseUnits);
+        }
+    }
+
+    private static void QueueBluetoothPowerSaving(
+        TransportKind kind,
+        LayerCommandStateMachine commandMachine)
+    {
+        if (kind == TransportKind.Bluetooth)
+        {
+            commandMachine.QueueBluetoothConnectionMode(BluetoothConnectionMode.PowerSaving);
         }
     }
 
@@ -887,6 +951,14 @@ public sealed class CompanionService : ICompanionSession
         };
     }
 
+    private BluetoothConnectionMode GetDesiredBluetoothConnectionMode()
+    {
+        lock (this.bluetoothModeSync)
+        {
+            return this.desiredBluetoothConnectionMode;
+        }
+    }
+
     private long BeginShortcutGeneration()
     {
         lock (this.shortcutSync)
@@ -1114,6 +1186,10 @@ public sealed class CompanionService : ICompanionSession
     private sealed record RenewMomentariesEvent(long Generation) : SessionServiceEvent(Generation);
 
     private sealed record BluetoothHealthCheckEvent(long Generation) : SessionServiceEvent(Generation);
+
+    private sealed record BluetoothConnectionModeChangedEvent(
+        long Generation,
+        BluetoothConnectionMode Mode) : SessionServiceEvent(Generation);
 
     private sealed record StopRequestedEvent : ServiceEvent
     {

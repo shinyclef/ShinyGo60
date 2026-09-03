@@ -6,4 +6,6 @@ public sealed record CompanionConfiguration(
     IReadOnlyList<ShortcutConfiguration> Shortcuts)
 {
     public const int CurrentSchemaVersion = 1;
+
+    public WidgetTaskbarSelection? WidgetTaskbar { get; init; }
 }

@@ -28,9 +28,25 @@ public partial class MainWindow : Window
         ResolvedCompanionConfiguration configuration,
         bool startWithWindows,
         string diagnosticPath)
+        : this(
+            manifest,
+            configuration,
+            [new WidgetTaskbarOption("Primary taskbar", WidgetTaskbarSelection.Primary, IsPrimary: true)],
+            startWithWindows,
+            diagnosticPath)
+    {
+    }
+
+    public MainWindow(
+        LayoutManifest manifest,
+        ResolvedCompanionConfiguration configuration,
+        IReadOnlyList<WidgetTaskbarOption> widgetTaskbarOptions,
+        bool startWithWindows,
+        string diagnosticPath)
     {
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(widgetTaskbarOptions);
         ArgumentException.ThrowIfNullOrWhiteSpace(diagnosticPath);
 
         this.AvailableActions =
@@ -40,6 +56,7 @@ public partial class MainWindow : Window
         ];
         this.AvailableLayers = manifest.Layers.Select(layer => layer.Name).ToArray();
         this.ShortcutRows = [];
+        this.WidgetTaskbarOptions = new ObservableCollection<WidgetTaskbarOption>(widgetTaskbarOptions);
 
         this.InitializeComponent();
         this.DataContext = this;
@@ -60,16 +77,34 @@ public partial class MainWindow : Window
 
     public ObservableCollection<ShortcutEditorRow> ShortcutRows { get; }
 
+    public ObservableCollection<WidgetTaskbarOption> WidgetTaskbarOptions { get; }
+
     public void ApplySavedConfiguration(ResolvedCompanionConfiguration configuration, bool startWithWindows)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         this.TransportPreferenceValue.SelectedItem = configuration.TransportPreference;
+        this.SelectWidgetTaskbar(configuration.WidgetTaskbar);
         this.StartWithWindowsValue.IsChecked = startWithWindows;
         this.ShortcutRows.Clear();
         foreach (ShortcutBinding binding in configuration.Shortcuts)
         {
             this.ShortcutRows.Add(new ShortcutEditorRow(binding.Gesture.ToString(), binding.Action, binding.TargetLayerName));
         }
+    }
+
+    public void UpdateWidgetTaskbarOptions(IReadOnlyList<WidgetTaskbarOption> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        WidgetTaskbarSelection selection = this.WidgetTaskbarValue.SelectedItem is WidgetTaskbarOption selected
+            ? selected.Selection
+            : WidgetTaskbarSelection.Primary;
+        this.WidgetTaskbarOptions.Clear();
+        foreach (WidgetTaskbarOption option in options)
+        {
+            this.WidgetTaskbarOptions.Add(option);
+        }
+
+        this.SelectWidgetTaskbar(selection);
     }
 
     public void UpdateStatus(CompanionStatus status)
@@ -210,6 +245,32 @@ public partial class MainWindow : Window
         return modifiers;
     }
 
+    private void SelectWidgetTaskbar(WidgetTaskbarSelection selection)
+    {
+        WidgetTaskbarOption? option = selection.Mode switch
+        {
+            WidgetTaskbarMode.All => this.WidgetTaskbarOptions.FirstOrDefault(
+                candidate => candidate.Selection.Mode == WidgetTaskbarMode.All),
+            WidgetTaskbarMode.SpecificMonitor => this.WidgetTaskbarOptions.FirstOrDefault(
+                candidate => string.Equals(
+                    candidate.Selection.MonitorId,
+                    selection.MonitorId,
+                    StringComparison.OrdinalIgnoreCase)),
+            WidgetTaskbarMode.Primary => this.WidgetTaskbarOptions.FirstOrDefault(candidate => candidate.IsPrimary),
+            _ => null,
+        };
+        if (option is null)
+        {
+            string label = selection.Mode == WidgetTaskbarMode.SpecificMonitor
+                ? $"{selection.MonitorId} (currently unavailable)"
+                : "Primary taskbar (currently unavailable)";
+            option = new WidgetTaskbarOption(label, selection, selection.Mode == WidgetTaskbarMode.Primary);
+            this.WidgetTaskbarOptions.Add(option);
+        }
+
+        this.WidgetTaskbarValue.SelectedItem = option;
+    }
+
     private void ApplyConnectionColors(CompanionDisplayConnectionState state)
     {
         (Brush background, Brush foreground) = state switch
@@ -271,12 +332,18 @@ public partial class MainWindow : Window
         TransportPreference transport = this.TransportPreferenceValue.SelectedItem is TransportPreference selected
             ? selected
             : TransportPreference.Automatic;
+        WidgetTaskbarSelection widgetTaskbar = this.WidgetTaskbarValue.SelectedItem is WidgetTaskbarOption taskbarOption
+            ? taskbarOption.Selection
+            : WidgetTaskbarSelection.Primary;
         CompanionConfiguration configuration = new(
             CompanionConfiguration.CurrentSchemaVersion,
             transport,
             this.ShortcutRows
                 .Select(row => new ShortcutConfiguration(row.Shortcut.Trim(), row.Action, row.TargetLayer))
-                .ToArray());
+                .ToArray())
+        {
+            WidgetTaskbar = widgetTaskbar,
+        };
         this.SetSaving(true);
         if (this.SettingsSaveRequested is null)
         {

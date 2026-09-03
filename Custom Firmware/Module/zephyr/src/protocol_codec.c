@@ -3,7 +3,7 @@
 #include <shinygo60/protocol.h>
 
 #define PAYLOAD_OFFSET 4U
-#define KNOWN_CAPABILITIES 0x0fU
+#define KNOWN_CAPABILITIES 0x1fU
 #define KNOWN_STATE_INDICATORS 0x03U
 #define KNOWN_BATTERY_INDICATORS 0x0fU
 
@@ -208,6 +208,18 @@ static bool decode_momentary_command(const uint8_t *payload, struct shinygo60_me
            all_zero(&payload[13], 3U);
 }
 
+static bool decode_bluetooth_mode_command(
+    const uint8_t *payload, struct shinygo60_message *message)
+{
+    message->payload.bluetooth_mode_command.session_id = read_u32_le(payload);
+    message->payload.bluetooth_mode_command.command_id = read_u32_le(&payload[4]);
+    message->payload.bluetooth_mode_command.mode = payload[8];
+    return message->payload.bluetooth_mode_command.session_id != 0U &&
+           message->payload.bluetooth_mode_command.command_id != 0U &&
+           message->payload.bluetooth_mode_command.mode <= SHINYGO60_BLUETOOTH_INTERACTIVE &&
+           all_zero(&payload[9], 7U);
+}
+
 static bool decode_command_result(const uint8_t *payload, struct shinygo60_message *message)
 {
     message->payload.command_result.session_id = read_u32_le(payload);
@@ -286,6 +298,9 @@ enum shinygo60_decode_result shinygo60_protocol_decode(
     case SHINYGO60_MESSAGE_RENEW_MOMENTARY_LAYER:
     case SHINYGO60_MESSAGE_RELEASE_MOMENTARY_LAYER:
         valid = decode_momentary_command(payload, message);
+        break;
+    case SHINYGO60_MESSAGE_SET_BLUETOOTH_CONNECTION_MODE:
+        valid = decode_bluetooth_mode_command(payload, message);
         break;
     case SHINYGO60_MESSAGE_COMMAND_RESULT:
         valid = decode_command_result(payload, message);
@@ -432,6 +447,21 @@ static bool encode_momentary_command(const struct shinygo60_message *message, ui
     return true;
 }
 
+static bool encode_bluetooth_mode_command(
+    const struct shinygo60_message *message, uint8_t *payload)
+{
+    if (message->payload.bluetooth_mode_command.session_id == 0U ||
+        message->payload.bluetooth_mode_command.command_id == 0U ||
+        message->payload.bluetooth_mode_command.mode > SHINYGO60_BLUETOOTH_INTERACTIVE) {
+        return false;
+    }
+
+    write_u32_le(payload, message->payload.bluetooth_mode_command.session_id);
+    write_u32_le(&payload[4], message->payload.bluetooth_mode_command.command_id);
+    payload[8] = message->payload.bluetooth_mode_command.mode;
+    return true;
+}
+
 static bool encode_command_result(const struct shinygo60_message *message, uint8_t *payload)
 {
     if (message->payload.command_result.session_id == 0U ||
@@ -497,6 +527,8 @@ bool shinygo60_protocol_encode(
     case SHINYGO60_MESSAGE_RENEW_MOMENTARY_LAYER:
     case SHINYGO60_MESSAGE_RELEASE_MOMENTARY_LAYER:
         return encode_momentary_command(message, payload);
+    case SHINYGO60_MESSAGE_SET_BLUETOOTH_CONNECTION_MODE:
+        return encode_bluetooth_mode_command(message, payload);
     case SHINYGO60_MESSAGE_COMMAND_RESULT:
         return encode_command_result(message, payload);
     case SHINYGO60_MESSAGE_ERROR:

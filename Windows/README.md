@@ -73,18 +73,42 @@ live momentary actions when possible, then starts automatic discovery from USB. 
 See [`../Custom Firmware/BuildSupport/STEP13_HEADLESS_COMPANION.md`](../Custom%20Firmware/BuildSupport/STEP13_HEADLESS_COMPANION.md).
 
 The Step 14 companion edits shortcut mappings, applies changes without restarting, and optionally registers an exact background command under the current
-user's Windows startup key. Its status widget is a child of the Windows 11 `Shell_TrayWnd`, not a topmost screen overlay. The taskbar therefore owns fullscreen
-visibility and z-order. A one-second maintenance check only detects Explorer replacement and reapplies taskbar-relative placement; status updates remain
-event-driven. No driver, administrator access, hardware-monitor library, or high-frequency fullscreen polling is used.
+user's Windows startup key. The settings window can place its status widget on all taskbars or on one selected display. Each widget is a child of that display's
+Windows 11 `Shell_TrayWnd` or `Shell_SecondaryTrayWnd`, not a topmost screen overlay, so the taskbar owns fullscreen visibility and z-order. A one-second
+maintenance check only detects taskbar additions or Explorer replacement and reapplies taskbar-relative placement; status updates remain event-driven. Windows
+must be configured to show a taskbar on each desired display. No driver, administrator access, hardware-monitor library, or high-frequency fullscreen polling is
+used.
 See [`../Custom Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md`](../Custom%20Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md).
 
+Protocol 1.2 adaptively lowers the existing Bluetooth connection's peripheral latency while Windows is active and restores its power-saving value after 60
+seconds of system inactivity or as soon as Windows locks. This uses the same paired connection and does not add another Bluetooth link. Interactive mode expires
+after 90 seconds without companion traffic, and a normal shutdown requests power saving before the GATT client unsubscribes. Parameter negotiation is not tied
+to momentary shortcut presses or releases. See
+[`../Custom Firmware/BuildSupport/ADAPTIVE_BLUETOOTH_LATENCY.md`](../Custom%20Firmware/BuildSupport/ADAPTIVE_BLUETOOTH_LATENCY.md).
+
 Step 9 locks the 20-byte protocol-v1 frame, layout negotiation, session ownership, layer-state messages, leased momentary commands, and structured errors. Step 11
-extends that fixed frame to protocol 1.1; the firmware and C# codecs consume the same fourteen golden byte vectors. See
+extends that fixed frame to protocol 1.1, and adaptive Bluetooth control advances it to 1.2. The firmware and C# codecs consume the same fifteen golden byte
+vectors. See
 [`../Custom Firmware/BuildSupport/STEP9_PROTOCOL_V1.md`](../Custom%20Firmware/BuildSupport/STEP9_PROTOCOL_V1.md).
 
 Step 7's `Go60KeymapInspector` validates exported metadata while treating all key behaviors as opaque bytes. `LayoutArtifactGenerator` copies those exact bytes and
 writes `layout-manifest.json` plus `shinygo60_layout.h`; both carry the same deterministic layout identity. The shared `LayoutManifestJson` contract is used for
 strict JSON writing and reading.
+
+Step 15 wraps that pipeline in the WPF `ShinyGo60.Builder`. It discovers exactly one top-level `.keymap` in `Input`, accepts a file dropped onto the executable or
+window, and prompts when multiple candidates exist. It preflights Docker Desktop, the exact pinned image, and a 1 GB working-space reserve; reports real pipeline
+stages; cancels the exact build container; opens a successful atomic output set; and offers cleanup limited to GUID-named temporary folders and the isolated
+`shinygo60-v25-11` construction cache. The cleanup preserves the installed image, successful outputs, and unrelated Docker state.
+
+Publish the approximately 62 MB self-contained Windows x64 package with:
+
+```powershell
+& '.\Windows\Publish-Builder.ps1'
+```
+
+The resulting `artifacts\ShinyGo60 Builder\ShinyGo60.Builder.exe` requires Docker Desktop and the pinned image but no separately installed .NET runtime, Visual
+Studio, Git, or Python. See
+[`../Custom Firmware/BuildSupport/STEP15_ONE_CLICK_BUILDER.md`](../Custom%20Firmware/BuildSupport/STEP15_ONE_CLICK_BUILDER.md).
 
 Step 8 connects those pieces to the pinned firmware environment. Run a development build with:
 

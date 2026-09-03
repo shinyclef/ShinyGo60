@@ -47,8 +47,9 @@ internal static class FirmwareBuildPipelineTests
         };
         FirmwareBuildPipeline pipeline = new(runner);
         FirmwareBuildRequest request = CreateRequest(caseRoot);
+        RecordingProgress progress = new();
 
-        FirmwareBuildResult first = await pipeline.BuildAsync(request);
+        FirmwareBuildResult first = await pipeline.BuildAsync(request, progress);
         FirmwareBuildResult second = await pipeline.BuildAsync(request);
 
         AssertEx.True(File.Exists(first.Uf2Path), "A successful build should publish its UF2.");
@@ -75,6 +76,9 @@ internal static class FirmwareBuildPipelineTests
         AssertEx.True(
             dockerRun.Arguments.Any(argument => argument.Contains("生成 path", StringComparison.Ordinal)),
             "Docker should receive Unicode workspace paths as one unsplit argument.");
+        AssertEx.True(
+            progress.Stages.SequenceEqual(Enum.GetValues<FirmwareBuildStage>()),
+            "The graphical builder should receive every build stage in order.");
     }
 
     private static async ValueTask VerifyCompilerFailureAsync(string caseRoot)
@@ -309,5 +313,15 @@ internal static class FirmwareBuildPipelineTests
         }
 
         throw new InvalidOperationException("Could not find the ShinyGo60 repository root.");
+    }
+
+    private sealed class RecordingProgress : IProgress<FirmwareBuildProgress>
+    {
+        public List<FirmwareBuildStage> Stages { get; } = [];
+
+        public void Report(FirmwareBuildProgress value)
+        {
+            this.Stages.Add(value.Stage);
+        }
     }
 }

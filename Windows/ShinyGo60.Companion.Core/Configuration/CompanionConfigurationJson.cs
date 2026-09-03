@@ -93,6 +93,8 @@ public static class CompanionConfigurationJson
             throw new InvalidDataException($"Transport preference '{configuration.TransportPreference}' is unsupported.");
         }
 
+        WidgetTaskbarSelection widgetTaskbar = ResolveWidgetTaskbar(configuration.WidgetTaskbar);
+
         if (configuration.Shortcuts is null || configuration.Shortcuts.Count == 0)
         {
             throw new InvalidDataException("The companion configuration must contain at least one shortcut.");
@@ -151,7 +153,38 @@ public static class CompanionConfigurationJson
             bindings.Add(new ShortcutBinding(gesture, configuredShortcut.Action, checked((byte)layer.Id), layer.Name));
         }
 
-        return new ResolvedCompanionConfiguration(configuration.TransportPreference, bindings);
+        return new ResolvedCompanionConfiguration(configuration.TransportPreference, bindings)
+        {
+            WidgetTaskbar = widgetTaskbar,
+        };
+    }
+
+    private static WidgetTaskbarSelection ResolveWidgetTaskbar(WidgetTaskbarSelection? configuredSelection)
+    {
+        WidgetTaskbarSelection selection = configuredSelection ?? WidgetTaskbarSelection.Primary;
+        if (!Enum.IsDefined(selection.Mode))
+        {
+            throw new InvalidDataException($"Widget taskbar mode '{selection.Mode}' is unsupported.");
+        }
+
+        if (selection.Mode == WidgetTaskbarMode.SpecificMonitor)
+        {
+            if (string.IsNullOrWhiteSpace(selection.MonitorId))
+            {
+                throw new InvalidDataException("A specific widget monitor must include its monitor ID.");
+            }
+
+            return WidgetTaskbarSelection.ForMonitor(selection.MonitorId.Trim());
+        }
+
+        if (selection.MonitorId is not null)
+        {
+            throw new InvalidDataException($"Widget taskbar mode '{selection.Mode}' cannot include a monitor ID.");
+        }
+
+        return selection.Mode == WidgetTaskbarMode.All
+            ? WidgetTaskbarSelection.All
+            : WidgetTaskbarSelection.Primary;
     }
 
     private static JsonSerializerOptions CreateSerializerOptions()

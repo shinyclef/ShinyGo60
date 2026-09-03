@@ -24,6 +24,13 @@ states. Both halves re-publish ZMK's cached value once per active minute without
 notification used by wireless split. The required physical feasibility checks passed, so battery support is retained for version one; Windows sleep/resume is a
 documented deferred check.
 
+The adaptive-Bluetooth build advances the feature version to `0.8.1-adaptive-ble` and protocol 1.2. Its central requests peripheral latency 4 while Windows is
+active and restores the existing power-saving latency 30 when Windows is locked or idle. It changes parameters on the existing bonded host connection rather
+than opening another Bluetooth connection. Interactive mode has a 90-second firmware lease renewed by normal companion traffic, so closing or losing the
+companion returns the connection to power saving. Connection negotiation is deliberately not tied to momentary-layer presses or releases.
+The Bluetooth indication path also reserves one bounded response slot so a command arriving during a layer/battery indication is queued rather than rejected
+with an ATT error.
+
 The Step 6 packet, UUIDs, build evidence, and hardware validation checklist are recorded in
 [`../BuildSupport/STEP6_DUAL_TRANSPORT.md`](../BuildSupport/STEP6_DUAL_TRANSPORT.md).
 The matched keymap-to-firmware build contract is recorded in
@@ -34,3 +41,5 @@ Step 10 telemetry design, build evidence, and the pending physical checklist are
 [`../BuildSupport/STEP10_LAYER_TELEMETRY.md`](../BuildSupport/STEP10_LAYER_TELEMETRY.md).
 Step 11 battery design, candidate evidence, and physical feasibility checklist are recorded in
 [`../BuildSupport/STEP11_BATTERY_FEASIBILITY.md`](../BuildSupport/STEP11_BATTERY_FEASIBILITY.md).
+Adaptive connection policy, protocol changes, build evidence, and the physical test checklist are recorded in
+[`../BuildSupport/ADAPTIVE_BLUETOOTH_LATENCY.md`](../BuildSupport/ADAPTIVE_BLUETOOTH_LATENCY.md).

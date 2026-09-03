@@ -49,7 +49,7 @@ internal static class Program
             Console.WriteLine(options.AllowNetwork ? "Container network access: enabled." : "Container network access: disabled.");
 
             FirmwareBuildPipeline pipeline = new(new SystemProcessRunner());
-            FirmwareBuildResult result = await pipeline.BuildAsync(request, cancellation.Token);
+            FirmwareBuildResult result = await pipeline.BuildAsync(request, cancellationToken: cancellation.Token);
 
             Console.WriteLine("Firmware build succeeded.");
             Console.WriteLine($"Output: {result.OutputSetDirectory}");

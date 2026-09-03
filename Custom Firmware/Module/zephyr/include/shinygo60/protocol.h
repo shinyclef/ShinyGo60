@@ -9,7 +9,7 @@
 #define SHINYGO60_PACKET_MAGIC_0 0x53U
 #define SHINYGO60_PACKET_MAGIC_1 0x47U
 #define SHINYGO60_PROTOCOL_MAJOR 1U
-#define SHINYGO60_PROTOCOL_MINOR 1U
+#define SHINYGO60_PROTOCOL_MINOR 2U
 #define SHINYGO60_PROTOCOL_VERSION ((SHINYGO60_PROTOCOL_MAJOR << 4U) | SHINYGO60_PROTOCOL_MINOR)
 #define SHINYGO60_NO_LAYER UINT8_MAX
 #define SHINYGO60_MAXIMUM_LEASE_UNITS 50U
@@ -29,6 +29,7 @@ enum shinygo60_message_type {
     SHINYGO60_MESSAGE_PRESS_MOMENTARY_LAYER = 0x11,
     SHINYGO60_MESSAGE_RENEW_MOMENTARY_LAYER = 0x12,
     SHINYGO60_MESSAGE_RELEASE_MOMENTARY_LAYER = 0x13,
+    SHINYGO60_MESSAGE_SET_BLUETOOTH_CONNECTION_MODE = 0x14,
     SHINYGO60_MESSAGE_COMMAND_RESULT = 0x20,
     SHINYGO60_MESSAGE_ERROR = 0x7f,
 };
@@ -38,6 +39,18 @@ enum shinygo60_capability {
     SHINYGO60_CAPABILITY_PERSISTENT_LAYER = 1U << 1,
     SHINYGO60_CAPABILITY_MOMENTARY_LAYER = 1U << 2,
     SHINYGO60_CAPABILITY_BATTERY_TELEMETRY = 1U << 3,
+    SHINYGO60_CAPABILITY_ADAPTIVE_BLUETOOTH_LATENCY = 1U << 4,
+};
+
+enum shinygo60_bluetooth_connection_mode {
+    SHINYGO60_BLUETOOTH_POWER_SAVING = 0,
+    SHINYGO60_BLUETOOTH_INTERACTIVE = 1,
+};
+
+enum shinygo60_bluetooth_mode_result {
+    SHINYGO60_BLUETOOTH_MODE_APPLIED,
+    SHINYGO60_BLUETOOTH_MODE_NO_CHANGE,
+    SHINYGO60_BLUETOOTH_MODE_UNAVAILABLE,
 };
 
 enum shinygo60_hello_status {
@@ -165,6 +178,11 @@ struct shinygo60_message {
         struct {
             uint32_t session_id;
             uint32_t command_id;
+            uint8_t mode;
+        } bluetooth_mode_command;
+        struct {
+            uint32_t session_id;
+            uint32_t command_id;
             uint8_t status;
             struct shinygo60_layer_state state;
         } command_result;
@@ -209,5 +227,12 @@ void shinygo60_protocol_transport_disconnected(enum shinygo60_transport transpor
 bool shinygo60_usb_send(const uint8_t packet[SHINYGO60_PACKET_SIZE]);
 
 bool shinygo60_ble_send(const uint8_t packet[SHINYGO60_PACKET_SIZE]);
+
+enum shinygo60_bluetooth_mode_result shinygo60_ble_set_connection_mode(
+    enum shinygo60_bluetooth_connection_mode mode);
+
+void shinygo60_ble_reset_connection_mode(void);
+
+void shinygo60_ble_note_companion_activity(void);
 
 #endif /* SHINYGO60_PROTOCOL_H_ */

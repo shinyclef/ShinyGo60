@@ -41,6 +41,9 @@ static const uint8_t renew_momentary_layer[] = {
 static const uint8_t release_momentary_layer[] = {
 #include "vectors/release-momentary-layer.bytes"
 };
+static const uint8_t set_bluetooth_connection_mode[] = {
+#include "vectors/set-bluetooth-connection-mode.bytes"
+};
 static const uint8_t command_result[] = {
 #include "vectors/command-result.bytes"
 };
@@ -76,6 +79,8 @@ static void verify_golden_vectors(void)
     assert_round_trip(press_momentary_layer, SHINYGO60_MESSAGE_PRESS_MOMENTARY_LAYER);
     assert_round_trip(renew_momentary_layer, SHINYGO60_MESSAGE_RENEW_MOMENTARY_LAYER);
     assert_round_trip(release_momentary_layer, SHINYGO60_MESSAGE_RELEASE_MOMENTARY_LAYER);
+    assert_round_trip(
+        set_bluetooth_connection_mode, SHINYGO60_MESSAGE_SET_BLUETOOTH_CONNECTION_MODE);
     assert_round_trip(command_result, SHINYGO60_MESSAGE_COMMAND_RESULT);
     assert_round_trip(error_message, SHINYGO60_MESSAGE_ERROR);
 
@@ -83,7 +88,7 @@ static void verify_golden_vectors(void)
     assert(shinygo60_protocol_decode(hello_request, sizeof(hello_request), &message) ==
            SHINYGO60_DECODE_OK);
     assert(message.payload.hello.client_nonce == 0x1234U);
-    assert(message.payload.hello.requested_capabilities == 0x0fU);
+    assert(message.payload.hello.requested_capabilities == 0x1fU);
     assert(message.payload.hello.expected_layout[0] == 0xb4U);
     assert(message.payload.hello.expected_layout[7] == 0xf3U);
 
@@ -111,6 +116,14 @@ static void verify_golden_vectors(void)
     assert(message.payload.error.code == SHINYGO60_ERROR_STALE_STATE);
     assert(message.payload.error.offending_message_type == SHINYGO60_MESSAGE_SET_PERSISTENT_LAYER);
     assert(message.payload.error.detail == 42U);
+
+    assert(shinygo60_protocol_decode(
+               set_bluetooth_connection_mode,
+               sizeof(set_bluetooth_connection_mode),
+               &message) == SHINYGO60_DECODE_OK);
+    assert(message.payload.bluetooth_mode_command.session_id == 0x89abcdefU);
+    assert(message.payload.bluetooth_mode_command.command_id == 0x11223348U);
+    assert(message.payload.bluetooth_mode_command.mode == SHINYGO60_BLUETOOTH_INTERACTIVE);
 }
 
 static void assert_decode_result(
@@ -156,6 +169,14 @@ static void verify_malformed_packets(void)
     packet[17] = SHINYGO60_MAXIMUM_LEASE_UNITS + 1U;
     assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_INVALID_PAYLOAD);
 
+    memcpy(packet, set_bluetooth_connection_mode, sizeof(packet));
+    packet[12] = 2U;
+    assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_INVALID_PAYLOAD);
+
+    memcpy(packet, set_bluetooth_connection_mode, sizeof(packet));
+    packet[13] = 1U;
+    assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_INVALID_PAYLOAD);
+
     memcpy(packet, state_snapshot, sizeof(packet));
     packet[19] = SHINYGO60_LAYER_STATE_PERSISTENT_ACTIVE;
     assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_INVALID_PAYLOAD);
@@ -181,6 +202,6 @@ int main(void)
 {
     verify_golden_vectors();
     verify_malformed_packets();
-    puts("C protocol codec: 14 golden vectors and malformed packets passed");
+    puts("C protocol codec: 15 golden vectors and malformed packets passed");
     return 0;
 }

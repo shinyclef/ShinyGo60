@@ -20,7 +20,38 @@ internal static class LayerCommandStateMachineTests
         VerifySessionReplacementAndTransportLoss();
         VerifyTimeoutRetryAndRejectedPress();
         VerifyLeaseExpiryBeforeRelease();
+        VerifyAdaptiveBluetoothModeCommands();
         return ValueTask.CompletedTask;
+    }
+
+    private static void VerifyAdaptiveBluetoothModeCommands()
+    {
+        LayerCommandStateMachine machine = CreateReadyMachine(FirstSession, revision: 4, persistentLayer: 2);
+
+        uint interactiveCommandId = machine.QueueBluetoothConnectionMode(BluetoothConnectionMode.Interactive);
+        AssertEx.Equal(interactiveCommandId, machine.QueueBluetoothConnectionMode(BluetoothConnectionMode.Interactive));
+        AssertEx.Equal(1, machine.QueuedCommandCount);
+
+        ProtocolMessage.SetBluetoothConnectionModeCommand interactive =
+            (ProtocolMessage.SetBluetoothConnectionModeCommand)machine.TryStartNextCommand()!;
+        AssertEx.Equal(FirstSession, interactive.SessionId);
+        AssertEx.Equal(interactiveCommandId, interactive.CommandId);
+        AssertEx.Equal(BluetoothConnectionMode.Interactive, interactive.Mode);
+        AssertEx.Equal(
+            LayerCommandResponseResult.CommandAccepted,
+            machine.ApplyResponse(new ProtocolMessage.CommandResult(
+                FirstSession,
+                interactiveCommandId,
+                CommandStatus.Applied,
+                State(4, 2, 2, 0))));
+
+        uint powerSavingCommandId = machine.QueueBluetoothConnectionMode(BluetoothConnectionMode.PowerSaving);
+        ProtocolMessage.SetBluetoothConnectionModeCommand powerSaving =
+            (ProtocolMessage.SetBluetoothConnectionModeCommand)machine.TryStartNextCommand()!;
+        AssertEx.Equal(powerSavingCommandId, powerSaving.CommandId);
+        AssertEx.Equal(BluetoothConnectionMode.PowerSaving, powerSaving.Mode);
+        AssertEx.Throws<ArgumentOutOfRangeException>(
+            () => machine.QueueBluetoothConnectionMode((BluetoothConnectionMode)2));
     }
 
     private static void VerifyIndependentMomentaryOwnership()
@@ -272,7 +303,8 @@ internal static class LayerCommandStateMachineTests
             HelloStatus.Success,
             ProtocolCapability.StateTelemetry |
                 ProtocolCapability.PersistentLayer |
-                ProtocolCapability.MomentaryLayer,
+                ProtocolCapability.MomentaryLayer |
+                ProtocolCapability.AdaptiveBluetoothLatency,
             sessionId,
             Layout);
     }

@@ -1,6 +1,6 @@
 # ShinyGo60 Development Plan
 
-Status: Step 14 implementation complete; physical acceptance checks in progress
+Status: Step 15 implementation complete; clean-account builder acceptance and remaining physical checks are in progress
 
 Last updated: 2026-09-03
 
@@ -571,21 +571,38 @@ Implementation and acceptance evidence is recorded in
 
 Depends on: Step 13 and the decision from Step 11.
 
+### Post-Step-14 Bluetooth latency refinement
+
+- [x] Add a replay-safe protocol command for interactive and power-saving connection modes.
+- [x] Reuse the existing paired BLE connection; do not add another link or pairing.
+- [x] Request latency 4 during recent Windows activity and 30 after 60 seconds idle or while locked.
+- [x] Keep connection-parameter negotiation away from shortcut presses after per-momentary changes caused physical GATT failures.
+- [x] Queue one Bluetooth command response behind an in-flight indication instead of returning a transient ATT error.
+- [x] Return to power saving on a normal companion shutdown and after a 90-second loss-of-client lease.
+- [x] Coalesce redundant parameter changes and bound transient firmware retries.
+- [x] Pass the protocol, policy, companion-service, and complete offline Windows test suites.
+- [x] Produce and validate a network-disabled firmware build without rebuilding the Docker image.
+- [ ] Confirm Windows accepts a materially faster active connection on the physical Go60.
+- [ ] Observe normal-use battery impact with keyboard LEDs disabled.
+
+Design, build evidence, and the physical checklist are recorded in
+[Custom Firmware/BuildSupport/ADAPTIVE_BLUETOOTH_LATENCY.md](Custom%20Firmware/BuildSupport/ADAPTIVE_BLUETOOTH_LATENCY.md).
+
 ## Step 15: Add the one-click builder experience
 
 Goal: wrap the proven headless build pipeline in the agreed beginner-friendly flow.
 
 Work:
 
-- [ ] Find exactly one `.keymap` in `Input` or accept a dropped file.
-- [ ] Prompt for selection rather than guessing when multiple inputs exist.
-- [ ] Check Docker availability, build-image availability, and measured disk requirements.
-- [ ] Show clear progress without exposing unnecessary compiler noise.
-- [ ] Support cancellation without leaving a false-success output.
-- [ ] Publish the UF2, manifest, and log atomically into `Output`.
-- [ ] Open `Output` on success.
-- [ ] Offer a scoped ShinyGo60 cache cleanup action.
-- [ ] Publish the builder as a self-contained Windows executable.
+- [x] Find exactly one `.keymap` in `Input` or accept a dropped file.
+- [x] Prompt for selection rather than guessing when multiple inputs exist.
+- [x] Check Docker availability, build-image availability, and measured disk requirements.
+- [x] Show clear progress without exposing unnecessary compiler noise.
+- [x] Support cancellation without leaving a false-success output.
+- [x] Publish the UF2, manifest, and log atomically into `Output`.
+- [x] Open `Output` on success.
+- [x] Offer a scoped ShinyGo60 cache cleanup action.
+- [x] Publish the builder as a self-contained Windows executable.
 - [ ] Test on an account with no Visual Studio, Git, Python, or .NET runtime installed.
 
 Deliverables:
@@ -600,6 +617,15 @@ Done when:
 - The measured storage use remains within the decision made at gate G2.
 
 Depends on: Steps 3 and 8. Final UX should wait until Step 6 passes.
+
+Step 15 implementation completed on 2026-09-03. The 64,923,879-byte single-file Windows x64 executable and its required support files form a 62.05 MB package.
+With external .NET runtime lookup disabled, that executable reached an idle WPF window successfully. A genuine one-input launch then reused image
+`sha256:f5fedc1e224a672db76f4b345583545a9c3a3b7053dd55b4d30162f19639c446`, completed in 19.558 seconds, opened its result, and atomically published a
+958,464-byte two-segment UF2 with SHA-256 `74fcdd61fddc7321096299f418784d915a071da424617af4eea4c55c833246e8`. No workspace, stage, or new Docker
+image remained. All 14 offline Windows suites pass. Visual user acceptance and a separate clean-account check remain before the step is closed.
+
+Design and evidence are recorded in
+[Custom Firmware/BuildSupport/STEP15_ONE_CLICK_BUILDER.md](Custom%20Firmware/BuildSupport/STEP15_ONE_CLICK_BUILDER.md).
 
 ## Step 16: Harden the complete system
 

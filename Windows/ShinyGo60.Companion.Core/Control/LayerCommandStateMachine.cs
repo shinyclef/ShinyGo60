@@ -107,7 +107,8 @@ public sealed class LayerCommandStateMachine
             this.RequireSessionCapability(ProtocolCapability.PersistentLayer);
             this.ValidateLayer(layerId);
             uint commandId = this.AllocateCommandId();
-            this.queuedCommands.Enqueue(new QueuedCommand(CommandKind.SetPersistent, commandId, layerId, 0, 0));
+            this.queuedCommands.Enqueue(
+                new QueuedCommand(CommandKind.SetPersistent, commandId, layerId, 0, 0, BluetoothConnectionMode.PowerSaving));
             return commandId;
         }
     }
@@ -122,7 +123,13 @@ public sealed class LayerCommandStateMachine
             uint commandId = this.AllocateCommandId();
             this.momentaryActivations.Add(commandId);
             this.queuedCommands.Enqueue(
-                new QueuedCommand(CommandKind.PressMomentary, commandId, layerId, commandId, leaseUnits));
+                new QueuedCommand(
+                    CommandKind.PressMomentary,
+                    commandId,
+                    layerId,
+                    commandId,
+                    leaseUnits,
+                    BluetoothConnectionMode.PowerSaving));
             return commandId;
         }
     }
@@ -136,7 +143,13 @@ public sealed class LayerCommandStateMachine
             ValidateLease(leaseUnits);
             uint commandId = this.AllocateCommandId();
             this.queuedCommands.Enqueue(
-                new QueuedCommand(CommandKind.RenewMomentary, commandId, 0, activationId, leaseUnits));
+                new QueuedCommand(
+                    CommandKind.RenewMomentary,
+                    commandId,
+                    0,
+                    activationId,
+                    leaseUnits,
+                    BluetoothConnectionMode.PowerSaving));
             return commandId;
         }
     }
@@ -164,7 +177,44 @@ public sealed class LayerCommandStateMachine
 
             uint commandId = this.AllocateCommandId();
             this.queuedCommands.Enqueue(
-                new QueuedCommand(CommandKind.ReleaseMomentary, commandId, 0, activationId, 0));
+                new QueuedCommand(
+                    CommandKind.ReleaseMomentary,
+                    commandId,
+                    0,
+                    activationId,
+                    0,
+                    BluetoothConnectionMode.PowerSaving));
+            return commandId;
+        }
+    }
+
+    public uint QueueBluetoothConnectionMode(BluetoothConnectionMode mode)
+    {
+        lock (this.syncRoot)
+        {
+            this.RequireSessionCapability(ProtocolCapability.AdaptiveBluetoothLatency);
+            if (!Enum.IsDefined(mode))
+            {
+                throw new ArgumentOutOfRangeException(nameof(mode));
+            }
+
+            if (this.pendingCommand?.Command is { Kind: CommandKind.SetBluetoothConnectionMode } pending &&
+                pending.ConnectionMode == mode)
+            {
+                return pending.CommandId;
+            }
+
+            foreach (QueuedCommand queued in this.queuedCommands)
+            {
+                if (queued.Kind == CommandKind.SetBluetoothConnectionMode && queued.ConnectionMode == mode)
+                {
+                    return queued.CommandId;
+                }
+            }
+
+            uint commandId = this.AllocateCommandId();
+            this.queuedCommands.Enqueue(
+                new QueuedCommand(CommandKind.SetBluetoothConnectionMode, commandId, 0, 0, 0, mode));
             return commandId;
         }
     }
@@ -195,6 +245,8 @@ public sealed class LayerCommandStateMachine
                     this.sessionId, command.CommandId, command.ActivationId, command.LeaseUnits),
                 CommandKind.ReleaseMomentary => new ProtocolMessage.ReleaseMomentaryLayerCommand(
                     this.sessionId, command.CommandId, command.ActivationId),
+                CommandKind.SetBluetoothConnectionMode => new ProtocolMessage.SetBluetoothConnectionModeCommand(
+                    this.sessionId, command.CommandId, command.ConnectionMode),
                 _ => throw new InvalidOperationException($"Unsupported queued command {command.Kind}."),
             };
             this.pendingCommand = new PendingCommandState(command, message);
@@ -360,6 +412,7 @@ public sealed class LayerCommandStateMachine
         PressMomentary,
         RenewMomentary,
         ReleaseMomentary,
+        SetBluetoothConnectionMode,
     }
 
     private sealed record QueuedCommand(
@@ -367,7 +420,8 @@ public sealed class LayerCommandStateMachine
         uint CommandId,
         byte LayerId,
         uint ActivationId,
-        byte LeaseUnits);
+        byte LeaseUnits,
+        BluetoothConnectionMode ConnectionMode);
 
     private sealed record PendingCommandState(QueuedCommand Command, ProtocolMessage Message);
 }

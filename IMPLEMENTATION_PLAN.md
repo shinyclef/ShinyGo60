@@ -1,8 +1,8 @@
 # ShinyGo60 Implementation Plan
 
-Status: first central-only firmware feature passed its hardware smoke test; recovery preparation skipped by user; detailed baseline verification remains
+Status: implementation is complete through the one-click builder; clean-account and remaining physical acceptance are in progress
 
-Last updated: 2026-09-01
+Last updated: 2026-09-03
 
 This document turns the goals in [README.md](README.md) into an implementation plan. It records the decisions made so far, the proposed user experience, the technical architecture, the major risks, and the order in which the work should be validated.
 
@@ -241,6 +241,7 @@ The first protocol should support:
 - `PressMomentaryLayer`: start a leased external activation.
 - `RenewMomentaryLayer`: keep a held activation alive.
 - `ReleaseMomentaryLayer`: end it normally.
+- `SetBluetoothConnectionMode`: request interactive or power-saving peripheral latency for the existing Bluetooth session.
 - `CommandResult`: acknowledge a command with its result and resulting state.
 - `Error`: reject invalid, unsupported, unauthorized, or mismatched messages.
 
@@ -275,6 +276,12 @@ Bluetooth requirements include:
 - No high-frequency polling.
 - No permanent low-latency connection setting that materially harms battery life.
 
+Protocol 1.2 implements the last requirement by adjusting peripheral latency on the existing bonded connection. The companion requests latency 4 while Windows
+is unlocked and recently active, then restores the original power-saving latency 30 after 60 seconds without system input or on session lock. Firmware uses
+an expiring 90-second interactive lease, renewed by ordinary companion traffic. Parameter negotiation is kept away from momentary-layer presses and releases
+after physical testing found that per-press changes caused intermittent Windows GATT failures. Windows remains the central and may negotiate a different final
+parameter value.
+
 Windows GATT caching and any need to remove and re-pair after firmware service changes must be tested during the prototype rather than discovered during packaging.
 
 ### Transport selection
@@ -308,9 +315,10 @@ The widget should:
 - Update from events rather than frequent polling.
 - Show separate left and right battery values only if the battery feasibility gate passes.
 
-The selected hosting method reparents the WPF widget HWND to `Shell_TrayWnd` and uses coordinates relative to the taskbar client area. Explorer consequently owns
-the widget's fullscreen visibility and z-order. A low-frequency lifecycle check is permitted only to detect taskbar replacement and restore attachment; it is
-not used to detect fullscreen applications or update keyboard state.
+The selected hosting method reparents each WPF widget HWND to the chosen `Shell_TrayWnd` or `Shell_SecondaryTrayWnd` and uses coordinates relative to that
+taskbar's client area. The user can target one display or every taskbar. Explorer consequently owns each widget's fullscreen visibility and z-order. A
+low-frequency lifecycle check is permitted only to detect taskbar additions or replacement and restore attachment; it is not used to detect fullscreen
+applications or update keyboard state.
 
 ## 9. Battery feasibility gate
 
@@ -465,7 +473,7 @@ These choices should be resolved by their associated milestone rather than assum
 - Exact pinned MoErgo ZMK production revision.
 - Whether persistent external layer selection survives keyboard reboot.
 - Exact rule when both USB and Bluetooth connections are simultaneously available.
-- Multi-monitor policy beyond the primary Windows taskbar.
+- Multi-monitor policy is configurable: one selected display or every taskbar exposed by Windows.
 - Registry location and immutable digest for the prebuilt Docker image when it is published.
 - Whether flashing remains manual or gains an explicitly confirmed helper after safe bootloader detection is proven.
 

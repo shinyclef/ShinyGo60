@@ -44,6 +44,26 @@ config SHINYGO60_BATTERY_STALE_SECONDS
     help
       Seconds without a battery observation before its last value is stale.
 
+config SHINYGO60_BLE_INTERACTIVE_LATENCY
+    int "Bluetooth peripheral latency while Windows is active"
+    range 0 499
+    default 4
+    depends on SHINYGO60_PROTOCOL && ZMK_BLE
+    help
+      Requested Bluetooth peripheral latency while the companion detects an
+      unlocked, recently active Windows session. A value of four permits up to
+      four skipped connection events when the keyboard has nothing to send.
+
+config SHINYGO60_BLE_INTERACTIVE_LEASE_SECONDS
+    int "Maximum interactive Bluetooth time without companion traffic"
+    range 30 600
+    default 90
+    depends on SHINYGO60_PROTOCOL && ZMK_BLE
+    help
+      Return to the power-saving peripheral latency if the companion vanishes
+      without disabling its GATT subscription. Normal Bluetooth health checks
+      renew this lease while the companion remains connected.
+
 config SHINYGO60_LAYOUT_IDENTIFIER
     string "Generated ShinyGo60 layout identifier"
     default "sg60-v1-00000000000000010000000000000000"

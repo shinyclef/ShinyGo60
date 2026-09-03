@@ -26,6 +26,8 @@ internal static class CompanionServiceTests
         await VerifySilentBluetoothLossAsync();
         await VerifyStopSurvivesSilentTransportLossAsync();
         await VerifyStartupBeforeKeyboardAsync();
+        await VerifyAdaptiveBluetoothModesAsync();
+        VerifyBluetoothConnectionModePolicy();
         VerifyReconnectBackoff();
     }
 
@@ -258,6 +260,75 @@ internal static class CompanionServiceTests
         AssertEx.Equal(TimeSpan.FromSeconds(1), policy.GetDelay(8));
     }
 
+    private static async ValueTask VerifyAdaptiveBluetoothModesAsync()
+    {
+        LayoutManifest manifest = CreateManifest();
+        FakeTransportFactory bluetoothFactory = new(
+            manifest,
+            static (kind, _) => new FakeProtocolKeyboardTransport(kind));
+        await using CompanionService bluetoothService = CreateService(
+            manifest,
+            TransportPreference.Bluetooth,
+            bluetoothFactory);
+
+        await bluetoothService.StartAsync();
+        await WaitUntilAsync(
+            () => bluetoothService.State == CompanionConnectionState.Connected,
+            "The adaptive Bluetooth test did not connect.");
+        FakeProtocolKeyboardTransport bluetoothTransport = bluetoothFactory.Created[0];
+        AssertEx.Equal(1, bluetoothTransport.Count<ProtocolMessage.SetBluetoothConnectionModeCommand>());
+        AssertEx.Equal(
+            BluetoothConnectionMode.Interactive,
+            bluetoothTransport.Last<ProtocolMessage.SetBluetoothConnectionModeCommand>().Mode);
+
+        bluetoothService.SetBluetoothConnectionMode(BluetoothConnectionMode.PowerSaving);
+        await WaitUntilAsync(
+            () => bluetoothTransport.Count<ProtocolMessage.SetBluetoothConnectionModeCommand>() == 2,
+            "The companion did not request Bluetooth power-saving mode.");
+        AssertEx.Equal(
+            BluetoothConnectionMode.PowerSaving,
+            bluetoothTransport.Last<ProtocolMessage.SetBluetoothConnectionModeCommand>().Mode);
+
+        bluetoothService.SetBluetoothConnectionMode(BluetoothConnectionMode.PowerSaving);
+        await Task.Delay(TimeSpan.FromMilliseconds(40));
+        AssertEx.Equal(2, bluetoothTransport.Count<ProtocolMessage.SetBluetoothConnectionModeCommand>());
+
+        bluetoothService.SetBluetoothConnectionMode(BluetoothConnectionMode.Interactive);
+        await WaitUntilAsync(
+            () => bluetoothTransport.Count<ProtocolMessage.SetBluetoothConnectionModeCommand>() == 3,
+            "The companion did not restore interactive Bluetooth mode.");
+        await bluetoothService.StopAsync();
+        AssertEx.Equal(
+            BluetoothConnectionMode.PowerSaving,
+            bluetoothTransport.Last<ProtocolMessage.SetBluetoothConnectionModeCommand>().Mode);
+
+        FakeTransportFactory usbFactory = new(manifest, static (kind, _) => new FakeProtocolKeyboardTransport(kind));
+        await using CompanionService usbService = CreateService(manifest, TransportPreference.Usb, usbFactory);
+        usbService.SetBluetoothConnectionMode(BluetoothConnectionMode.PowerSaving);
+        await usbService.StartAsync();
+        await WaitUntilAsync(
+            () => usbService.State == CompanionConnectionState.Connected,
+            "The adaptive USB control test did not connect.");
+        AssertEx.Equal(0, usbFactory.Created[0].Count<ProtocolMessage.SetBluetoothConnectionModeCommand>());
+        await usbService.StopAsync();
+    }
+
+    private static void VerifyBluetoothConnectionModePolicy()
+    {
+        BluetoothConnectionModePolicy policy = new(TimeSpan.FromSeconds(60));
+        AssertEx.Equal(
+            BluetoothConnectionMode.Interactive,
+            policy.GetMode(sessionLocked: false, TimeSpan.FromSeconds(59.999)));
+        AssertEx.Equal(
+            BluetoothConnectionMode.PowerSaving,
+            policy.GetMode(sessionLocked: false, TimeSpan.FromSeconds(60)));
+        AssertEx.Equal(
+            BluetoothConnectionMode.PowerSaving,
+            policy.GetMode(sessionLocked: true, TimeSpan.Zero));
+        AssertEx.Throws<ArgumentOutOfRangeException>(
+            () => policy.GetMode(sessionLocked: false, TimeSpan.FromMilliseconds(-1)));
+    }
+
     private static CompanionService CreateService(
         LayoutManifest manifest,
         TransportPreference preference,
@@ -428,6 +499,12 @@ internal static class CompanionServiceTests
             return this.requests.Count(message => message is TMessage);
         }
 
+        public TMessage Last<TMessage>()
+            where TMessage : ProtocolMessage
+        {
+            return this.requests.OfType<TMessage>().Last();
+        }
+
         public void RaiseConnectionLost()
         {
             this.IsConnected = false;
@@ -469,6 +546,8 @@ internal static class CompanionServiceTests
                 ProtocolMessage.RenewMomentaryLayerCommand command => this.Renew(command),
                 ProtocolMessage.ReleaseMomentaryLayerCommand command => this.Release(command),
                 ProtocolMessage.SetPersistentLayerCommand command => this.SetPersistent(command),
+                ProtocolMessage.SetBluetoothConnectionModeCommand command =>
+                    this.Result(command.CommandId, CommandStatus.Applied),
                 _ => throw new InvalidOperationException($"The fake keyboard does not support {message.Type}.")
             };
         }

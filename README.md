@@ -15,14 +15,17 @@ ShinyGo60 is an independent community project and is not affiliated with or endo
 - Select a persistent layer with a configured shortcut.
 - Report the effective ZMK layer over USB or encrypted, bonded Bluetooth Low Energy.
 - Report separate left- and right-half battery state, including stale or unavailable readings.
-- Display the current layer, connection, transport, and battery state in a focusless Windows 11 taskbar widget.
+- Display the current layer, connection, transport, and battery state in a focusless Windows 11 widget on one or all taskbars.
 - Prefer USB, Bluetooth, or automatic transport selection.
+- Adapt the existing Bluetooth connection between interactive and power-saving latency according to Windows activity.
 - Preserve normal keyboard behavior when the Windows companion is not running.
 - Build a validated UF2 and matching layout manifest reproducibly from one exported `.keymap`.
 
 ## Project status
 
-The protocol 1.1 firmware, command-line build pipeline, USB/Bluetooth transport, layer control, per-half battery telemetry, Windows companion, configuration UI, and taskbar widget are implemented. Completed automated and hardware checks are recorded in the linked acceptance reports.
+The protocol 1.2 firmware, graphical and command-line build pipelines, USB/Bluetooth transport, layer control, per-half battery telemetry, Windows companion,
+configuration UI, and taskbar widget are implemented. Protocol 1.2 adds adaptive latency to the existing bonded Bluetooth connection. Completed automated and
+hardware checks are recorded in the linked acceptance reports.
 
 This repository is currently a **source release**, not a general end-user release:
 
@@ -31,8 +34,8 @@ This repository is currently a **source release**, not a general end-user releas
 | Command-line keymap-to-UF2 builder | Working and hardware-tested |
 | Firmware protocol and USB/Bluetooth transports | Working and hardware-tested |
 | Windows companion and shortcut editor | Working and hardware-tested |
-| Taskbar widget | Implemented; final fullscreen and Explorer-lifecycle checks are in progress |
-| Graphical firmware builder | Placeholder only; use the command-line builder |
+| Taskbar widget | Implemented, including selectable multi-monitor placement; final physical checks are in progress |
+| Graphical firmware builder | Working; final clean-account acceptance is pending |
 | Installer and prebuilt firmware-build image | Not yet published |
 
 See [Known limitations](#known-limitations) before building or flashing.
@@ -73,7 +76,8 @@ The protocol binds the firmware and companion to the same deterministic layout i
 - A MoErgo Go60. Other ZMK keyboards are not supported.
 - Windows 11 for the companion application.
 - A Go60 `.keymap` exported from the [MoErgo Layout Editor](https://docs.moergo.com/layout-editor-guide/advanced-usage-export-import/). JSON layout backups are not accepted as build input.
-- The [.NET 10 SDK](https://learn.microsoft.com/en-us/dotnet/core/install/windows). `global.json` requests SDK `10.0.203` and permits later 10.0 patch releases.
+- The [.NET 10 SDK](https://learn.microsoft.com/en-us/dotnet/core/install/windows) for building from source. The published graphical builder contains its own
+  runtime and does not require .NET, Visual Studio, Git, or Python.
 - [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/) with Linux containers and Buildx.
 - PowerShell and approximately 10 GB of free disk space while constructing the pinned firmware image. The retained image is approximately 4.46 GB.
 - Internet access for the initial .NET restore, NuGet vulnerability-index refreshes, and Docker image construction. Normal firmware builds run with container networking disabled.
@@ -94,7 +98,17 @@ This fetches pinned inputs and may take some time on its first run. The image co
 
 ### 2. Build firmware from a keymap
 
-Export a Go60 layout as a `.keymap`, then pass its path to the command-line builder:
+Create the self-contained graphical builder package:
+
+```powershell
+& '.\Windows\Publish-Builder.ps1'
+```
+
+Put exactly one exported Go60 `.keymap` in `artifacts\ShinyGo60 Builder\Input`, then double-click
+`artifacts\ShinyGo60 Builder\ShinyGo60.Builder.exe`. A keymap can instead be dropped onto the executable or selected in its window. The builder checks Docker,
+the pinned image, and working space; shows concise progress; and opens the matched result on success.
+
+The command-line development path remains available:
 
 ```powershell
 dotnet run --project '.\Windows\ShinyGo60.BuildTool\ShinyGo60.BuildTool.csproj' --configuration Release -- `
@@ -173,14 +187,15 @@ See [Windows/README.md](Windows/README.md) for transport diagnostics and lower-l
 
 ## Known limitations
 
-- There is no installer, signed binary release, or published prebuilt Docker image yet. The current workflow builds and runs from source.
-- The WPF graphical firmware builder is not functional; use `ShinyGo60.BuildTool`.
-- The taskbar widget targets the primary Windows 11 taskbar. Multi-monitor placement and nonstandard taskbar-edge policy are not part of the current acceptance scope.
+- There is no installer, signed binary release, or published prebuilt Docker image yet. The graphical builder can be packaged from source, but first-time build
+  environment setup still uses the local construction instructions.
+- The taskbar widget can target all Windows 11 taskbars or one selected display. Windows must have a taskbar enabled on every display that should host it.
+- Final multi-monitor placement and nonstandard taskbar-edge checks remain part of the physical acceptance pass.
 - Final taskbar-child checks for fullscreen transitions and Explorer replacement are still in progress. Taskbar parenting uses an established but unofficial Windows shell technique.
 - Windows sleep/resume has not completed physical acceptance.
 - USB-powered battery readings can saturate at 100%. The companion distinguishes current, stale, and unavailable values; battery accuracy was accepted for battery-powered Bluetooth use.
 - Firmware input is limited to a MoErgo-exported Go60 `.keymap` and the pinned v25.11 backend.
-- The most recent physical regression for returning from a companion-selected persistent layer through a keyboard `&to` binding remains pending.
+- Adaptive Bluetooth latency requests are negotiated with Windows, so their exact timing and battery effect require physical measurement.
 
 Detailed acceptance evidence and exact test scope are recorded in the [Step 14 Windows experience report](Custom%20Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md).
 
@@ -211,6 +226,8 @@ Generated firmware workspaces, build output, binaries, and local settings are ig
 - [Layer-control safety and recovery](Custom%20Firmware/BuildSupport/STEP12_LAYER_CONTROL.md)
 - [Windows companion](Custom%20Firmware/BuildSupport/STEP13_HEADLESS_COMPANION.md)
 - [Windows UI and taskbar widget](Custom%20Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md)
+- [Adaptive Bluetooth latency](Custom%20Firmware/BuildSupport/ADAPTIVE_BLUETOOTH_LATENCY.md)
+- [One-click firmware builder](Custom%20Firmware/BuildSupport/STEP15_ONE_CLICK_BUILDER.md)
 
 ## Contributing
 
