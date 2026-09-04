@@ -43,12 +43,19 @@
                            FontWeight="SemiBold"
                            Text="SEARCHING" />
             </StackPanel>
-            <TextBlock x:Name="BatteryValue"
-                       Grid.Column="2"
-                       VerticalAlignment="Center"
-                       Foreground="#E8FFFFFF"
-                       FontSize="10"
-                       Text="L —  R —" />
+            <StackPanel Grid.Column="2"
+                        VerticalAlignment="Center"
+                        Orientation="Horizontal"
+                        TextElement.FontSize="12"
+                        TextElement.Foreground="#E8FFFFFF">
+                <TextBlock x:Name="LeftBatteryValue" Text="—" />
+                <TextBlock x:Name="LeftBatteryPercent" Foreground="#BFD0D5DC" />
+                <TextBlock x:Name="LeftBatteryStaleMarker" />
+                <TextBlock Foreground="#BFD0D5DC" Text=" · " />
+                <TextBlock x:Name="RightBatteryValue" Text="—" />
+                <TextBlock x:Name="RightBatteryPercent" Foreground="#BFD0D5DC" />
+                <TextBlock x:Name="RightBatteryStaleMarker" />
+            </StackPanel>
         </Grid>
     </Border>
 </Window>

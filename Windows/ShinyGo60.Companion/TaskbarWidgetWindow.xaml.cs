@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -31,7 +32,16 @@ public partial class TaskbarWidgetWindow : Window
         this.ConnectionValue.Text = string.IsNullOrEmpty(state.TransportLabel)
             ? state.ConnectionLabel
             : $"{state.ConnectionLabel} · {state.TransportLabel.ToUpperInvariant()}";
-        this.BatteryValue.Text = $"L {FormatBattery(state.LeftBattery)}  R {FormatBattery(state.RightBattery)}";
+        SetBatteryDisplay(
+            this.LeftBatteryValue,
+            this.LeftBatteryPercent,
+            this.LeftBatteryStaleMarker,
+            state.LeftBattery);
+        SetBatteryDisplay(
+            this.RightBatteryValue,
+            this.RightBatteryPercent,
+            this.RightBatteryStaleMarker,
+            state.RightBattery);
         this.StateStripe.Background = state.ConnectionState switch
         {
             CompanionDisplayConnectionState.Current => CurrentBrush,
@@ -62,9 +72,15 @@ public partial class TaskbarWidgetWindow : Window
         return brush;
     }
 
-    private static string FormatBattery(CompanionBatteryDisplay battery)
+    private static void SetBatteryDisplay(
+        TextBlock value,
+        TextBlock percent,
+        TextBlock staleMarker,
+        CompanionBatteryDisplay battery)
     {
-        return battery.IsStale ? $"{battery.Text}*" : battery.Text;
+        value.Text = battery.IsAvailable ? battery.Text[..^1] : battery.Text;
+        percent.Text = battery.IsAvailable ? "%" : string.Empty;
+        staleMarker.Text = battery.IsStale ? "*" : string.Empty;
     }
 
     private IntPtr ProcessWindowMessage(
