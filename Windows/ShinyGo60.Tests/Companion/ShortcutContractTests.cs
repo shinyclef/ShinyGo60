@@ -34,6 +34,10 @@ internal static class ShortcutContractTests
         AssertEx.Equal((byte)1, binding.TargetLayerId);
         AssertEx.Equal("Navigation", binding.TargetLayerName);
         AssertEx.Equal(WidgetTaskbarSelection.Primary, configuration.WidgetTaskbar);
+        AssertEx.Equal(new AdaptiveBluetoothSettings(), configuration.AdaptiveBluetooth);
+        AssertEx.Throws<InvalidDataException>(() => new AdaptiveBluetoothSettings { ActiveLatency = 31 }.Validate());
+        AssertEx.Throws<InvalidDataException>(() => new AdaptiveBluetoothSettings { IdleAfterSeconds = 0 }.Validate());
+        AssertEx.Throws<InvalidDataException>(() => new AdaptiveBluetoothSettings { MinimumSwitchSeconds = 4 }.Validate());
     }
 
     private static void VerifyWidgetTaskbarConfiguration()
@@ -167,6 +171,11 @@ internal static class ShortcutContractTests
             [new ShortcutConfiguration("F23", ShortcutActionKind.MomentaryLayer, "Navigation")])
         {
             WidgetTaskbar = WidgetTaskbarSelection.All,
+            AdaptiveBluetooth = new AdaptiveBluetoothSettings
+            {
+                Enabled = false, ActiveLatency = 0, IdleLatency = 45, IdleAfterSeconds = 120,
+                MinimumSwitchSeconds = 60, UseIdleWhenLocked = false,
+            },
         };
 
         try
@@ -179,6 +188,7 @@ internal static class ShortcutContractTests
             AssertEx.Equal(TransportPreference.Bluetooth, resolved.TransportPreference);
             AssertEx.Equal("F23", resolved.Shortcuts[0].Gesture.ToString());
             AssertEx.Equal(WidgetTaskbarSelection.All, resolved.WidgetTaskbar);
+            AssertEx.Equal(configuration.AdaptiveBluetooth, resolved.AdaptiveBluetooth);
             AssertEx.Equal(0, Directory.GetFiles(temporaryDirectory, "*.tmp").Length);
         }
         finally

@@ -1,5 +1,9 @@
 # ShinyGo60 ZMK module
 
+Firmware 0.10.1 expands connection history and protects the first 32 uncollected failures from reconnect storms. It retains diagnostic format 2 and protocol 1.3; companion 1.2.0 remains compatible. See [production diagnostics](../BuildSupport/PRODUCTION_DIAGNOSTICS.md).
+
+Firmware 0.10.0 uses protocol 1.3 and accepts configurable active/idle peripheral latencies plus a minimum interval between parameter requests. See [adaptive Bluetooth settings](../BuildSupport/ADAPTIVE_BLUETOOTH_SETTINGS.md).
+
 This is the hand-maintained out-of-tree firmware module. Zephyr discovers it through `zephyr/module.yml`; the pinned MoErgo Nix build receives it through its
 `extraModules` argument.
 
@@ -43,3 +47,7 @@ Step 11 battery design, candidate evidence, and physical feasibility checklist a
 [`../BuildSupport/STEP11_BATTERY_FEASIBILITY.md`](../BuildSupport/STEP11_BATTERY_FEASIBILITY.md).
 Adaptive connection policy, protocol changes, build evidence, and the physical test checklist are recorded in
 [`../BuildSupport/ADAPTIVE_BLUETOOTH_LATENCY.md`](../BuildSupport/ADAPTIVE_BLUETOOTH_LATENCY.md).
+
+Feature version `0.9.0` retains control protocol 1.2 and enables connection history by default. Separate RAM rings retain 64 critical and 32 routine events.
+The companion discovers diagnostic format 2 and collects the left half's history over encrypted Bluetooth without USB or periodic flash writes.
+See the [production diagnostic guide](../BuildSupport/PRODUCTION_DIAGNOSTICS.md) for installation, retention limits, the wire contract, and local export.

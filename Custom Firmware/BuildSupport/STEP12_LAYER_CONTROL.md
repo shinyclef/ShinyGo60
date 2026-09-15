@@ -1,6 +1,6 @@
 # Step 12 layer control
 
-Status: implementation corrected; physical `&to` regression verification pending
+Status: complete, including the corrected physical `&to Home` regression
 
 Recorded: 2026-09-02 on Windows 11
 
@@ -164,8 +164,8 @@ managed firmware-builder image by label and re-tag its Image ID instead of rebui
 
 On 2026-09-03, Step 14 use exposed a precedence defect not covered by the original acceptance run: a companion persistent Navigation selection prevented the
 physical `&to Home` binding on that layer from becoming effective. The wrapper now clears the external persistent selection as part of every physical `&to`
-transaction and reconciles the prior external layer. A new matched firmware build and physical USB/Bluetooth regression test are required before closing this
-correction.
+transaction and reconciles the prior external layer. The corrected matched firmware was flashed, and the focused physical regression confirmed that the
+layout's `&to Home` key clears a companion persistent selection and returns to Home.
 
 Run the bounded diagnostic after flashing, without touching keyboard layer keys during its approximately two-second sequence:
 
@@ -185,7 +185,7 @@ dotnet run --project '.\Windows\ShinyGo60.TransportSpike\ShinyGo60.TransportSpik
 
 ## Physical acceptance outline
 
-- [ ] Confirm persistent selection and replacement over USB and Bluetooth, including physical `&to Home` clearing a companion selection.
+- [x] Confirm persistent selection and replacement over USB and Bluetooth, including physical `&to Home` clearing a companion selection.
 - [x] Confirm momentary press, renewal, release, and automatic expiry over both transports.
 - [x] Confirm same-layer physical/external release in both orders.
 - [x] Confirm two simultaneous momentary activations and transparent behavior available in the current keymap; the exported keymap has no conditional layer.

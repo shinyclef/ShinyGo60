@@ -2,28 +2,33 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="ShinyGo60 Companion"
-        Width="820"
-        Height="720"
-        MinWidth="720"
+        Icon="Assets/Companion.ico"
+        Width="920"
+        Height="780"
+        MinWidth="800"
         MinHeight="620"
-        Background="#F4F6F8"
+        Background="{StaticResource CompanionBackground}"
+        Foreground="{StaticResource CompanionText}"
+        FontFamily="Segoe UI Variable Text, Segoe UI"
+        FontSize="13"
+        UseLayoutRounding="True"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
-        <Style TargetType="Button">
-            <Setter Property="Padding" Value="14,8" />
-            <Setter Property="MinHeight" Value="34" />
+        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Padding" Value="16,9" />
+            <Setter Property="MinHeight" Value="38" />
         </Style>
-        <Style TargetType="TextBox">
+        <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
             <Setter Property="Padding" Value="8,6" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
-        <Style TargetType="ComboBox">
+        <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
             <Setter Property="Padding" Value="7,5" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
     </Window.Resources>
 
-    <Grid Margin="28,24">
+    <Grid Margin="32,28">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -37,32 +42,32 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel>
-                <TextBlock FontSize="26" FontWeight="SemiBold" Text="ShinyGo60 Companion" />
+                <TextBlock FontSize="28" FontWeight="SemiBold" Text="ShinyGo60" />
                 <TextBlock Margin="0,3,0,0"
-                           Foreground="#657080"
-                           Text="Keyboard status and mouse shortcut configuration" />
+                           Foreground="{StaticResource CompanionMutedText}"
+                           Text="Your keyboard, at a glance." />
             </StackPanel>
             <Border x:Name="ConnectionBadge"
                     Grid.Column="1"
                     Padding="12,7"
                     VerticalAlignment="Center"
-                    Background="#E1E6EC"
+                    Background="#29323C"
                     CornerRadius="14">
                 <TextBlock x:Name="ConnectionBadgeValue"
                            FontSize="11"
                            FontWeight="Bold"
-                           Foreground="#3F4855"
+                           Foreground="#BBC6D2"
                            Text="STARTING" />
             </Border>
         </Grid>
 
         <Border Grid.Row="1"
                 Margin="0,20,0,16"
-                Padding="18,15"
-                Background="White"
-                BorderBrush="#DEE3E8"
+                Padding="24,22"
+                Background="{StaticResource CompanionSurface}"
+                BorderBrush="{StaticResource CompanionBorder}"
                 BorderThickness="1"
-                CornerRadius="8">
+                CornerRadius="14">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -70,32 +75,33 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Foreground="#657080" FontSize="11" FontWeight="SemiBold" Text="ACTIVE LAYER" />
+                    <TextBlock Foreground="{StaticResource CompanionMutedText}" FontSize="11" FontWeight="SemiBold" Text="ACTIVE LAYER" />
                     <TextBlock x:Name="LayerValue"
                                Margin="0,2,0,0"
-                               FontSize="22"
+                               FontSize="28"
                                FontWeight="SemiBold"
                                Text="No keyboard" />
-                    <TextBlock x:Name="TransportValue" Margin="0,2,0,0" Foreground="#657080" Text="Searching" />
+                    <TextBlock x:Name="TransportValue" Margin="0,2,0,0" Foreground="{StaticResource CompanionMutedText}" Text="Searching" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Margin="24,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Foreground="#657080" FontSize="11" FontWeight="SemiBold" Text="LEFT" />
+                    <TextBlock Foreground="{StaticResource CompanionMutedText}" FontSize="11" FontWeight="SemiBold" Text="LEFT BATTERY" />
                     <TextBlock x:Name="LeftBatteryValue" Margin="0,2,0,0" FontSize="18" Text="—" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" Margin="24,0,4,0" VerticalAlignment="Center">
-                    <TextBlock Foreground="#657080" FontSize="11" FontWeight="SemiBold" Text="RIGHT" />
+                    <TextBlock Foreground="{StaticResource CompanionMutedText}" FontSize="11" FontWeight="SemiBold" Text="RIGHT BATTERY" />
                     <TextBlock x:Name="RightBatteryValue" Margin="0,2,0,0" FontSize="18" Text="—" />
                 </StackPanel>
             </Grid>
         </Border>
 
         <Border Grid.Row="2"
-                Padding="18"
-                Background="White"
-                BorderBrush="#DEE3E8"
+                Padding="24"
+                Background="{StaticResource CompanionSurface}"
+                BorderBrush="{StaticResource CompanionBorder}"
                 BorderThickness="1"
-                CornerRadius="8">
-            <Grid>
+                CornerRadius="14">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <Grid Margin="0,0,20,0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -112,11 +118,12 @@
                     <StackPanel>
                         <TextBlock FontSize="18" FontWeight="SemiBold" Text="Shortcuts" />
                         <TextBlock Margin="0,3,0,0"
-                                   Foreground="#657080"
+                                   Foreground="{StaticResource CompanionMutedText}"
+                                   TextWrapping="Wrap"
                                    Text="Click a shortcut field, then press the mouse button or key combination." />
                     </StackPanel>
                     <StackPanel Grid.Column="1">
-                        <TextBlock Margin="0,0,0,4" Foreground="#657080" Text="Preferred connection" />
+                        <TextBlock Margin="0,0,0,4" Foreground="{StaticResource CompanionMutedText}" Text="Preferred connection" />
                         <ComboBox x:Name="TransportPreferenceValue" />
                     </StackPanel>
                 </Grid>
@@ -128,22 +135,24 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="42" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Foreground="#657080" FontSize="11" FontWeight="SemiBold" Text="SHORTCUT" />
-                    <TextBlock Grid.Column="1" Foreground="#657080" FontSize="11" FontWeight="SemiBold" Text="ACTION" />
-                    <TextBlock Grid.Column="2" Foreground="#657080" FontSize="11" FontWeight="SemiBold" Text="TARGET LAYER" />
+                    <TextBlock Foreground="{StaticResource CompanionMutedText}" FontSize="11" FontWeight="SemiBold" Text="SHORTCUT" />
+                    <TextBlock Grid.Column="1" Foreground="{StaticResource CompanionMutedText}" FontSize="11" FontWeight="SemiBold" Text="ACTION" />
+                    <TextBlock Grid.Column="2" Foreground="{StaticResource CompanionMutedText}" FontSize="11" FontWeight="SemiBold" Text="TARGET LAYER" />
                 </Grid>
 
                 <ListBox x:Name="ShortcutList"
+                         MinHeight="58" MaxHeight="240"
+                         Background="Transparent"
                          Grid.Row="2"
                          Padding="0"
-                         BorderBrush="#DEE3E8"
+                         BorderBrush="{StaticResource CompanionBorder}"
                          BorderThickness="1"
                          ItemsSource="{Binding ShortcutRows}"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                            <Setter Property="Padding" Value="5" />
+                            <Setter Property="Padding" Value="8" />
                         </Style>
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
@@ -179,7 +188,11 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
 
-                <Grid Grid.Row="3" Margin="0,10,0,0">
+                <Grid Grid.Row="3" Margin="0,14,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
@@ -188,10 +201,10 @@
                     <Button HorizontalAlignment="Left" Click="OnAddShortcutClick" Content="Add mapping" />
                     <StackPanel Grid.Column="1"
                                 Margin="16,0"
-                                HorizontalAlignment="Right"
+                                HorizontalAlignment="Left"
                                 VerticalAlignment="Center"
                                 Orientation="Horizontal">
-                        <TextBlock Margin="0,0,8,0" VerticalAlignment="Center" Foreground="#657080" Text="Widget:" />
+                        <TextBlock Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{StaticResource CompanionMutedText}" Text="Taskbar widget" />
                         <ComboBox x:Name="WidgetTaskbarValue"
                                   Width="245"
                                   DisplayMemberPath="Label"
@@ -204,29 +217,91 @@
                               Content="Start with Windows" />
                 </Grid>
 
-                <Expander Grid.Row="4" Margin="0,12,0,0" Header="Connection details">
-                    <StackPanel Margin="4,8,4,0">
-                        <TextBlock x:Name="OwnershipValue" Foreground="#4E5865" Text="Layer ownership: unknown" />
-                        <TextBlock x:Name="ShortcutActivityValue"
-                                   Margin="0,4,0,0"
-                                   Foreground="#4E5865"
-                                   Text="Waiting for shortcut input" />
-                        <TextBlock x:Name="DetailValue"
-                                   Margin="0,4,0,0"
-                                   Foreground="#4E5865"
-                                   Text="Starting Go60 discovery"
-                                   TextWrapping="Wrap" />
-                        <TextBlock x:Name="LogPathValue"
-                                   Margin="0,6,0,0"
-                                   Foreground="#7A8490"
-                                   FontSize="11"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
-                </Expander>
+                <StackPanel Grid.Row="4">
+                    <TextBlock x:Name="LatestConnectionIssueValue" Margin="0,16,0,0" TextWrapping="Wrap"
+                               Foreground="{StaticResource CompanionMutedText}" Text="Checking latest connection issue…" />
+                    <Expander Margin="0,12,0,0" Header="Advanced Settings">
+                        <StackPanel Margin="4,8,4,0">
+                            <Expander x:Name="IssueHistoryExpander" Header="Connection Issue History">
+                                <StackPanel Margin="4,8,4,0">
+                                    <TextBlock x:Name="IssueHistoryStatusValue" TextWrapping="Wrap" Text="History updates automatically." />
+                                    <TextBox x:Name="IssueHistoryValue" Margin="0,12,0,8" MaxHeight="260"
+                                             IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                             BorderThickness="0" Background="Transparent" Padding="0" VerticalContentAlignment="Top"
+                                             Text="Checking locally saved connection history…" />
+                                    <Button x:Name="CopyIssueHistoryButton" Margin="0,8,0,0" HorizontalAlignment="Left"
+                                            IsEnabled="False" Click="OnCopyIssueHistoryClick" Content="Copy All" />
+                                    <TextBlock x:Name="CopyIssueHistoryStatusValue" Margin="0,4,0,0" TextWrapping="Wrap"
+                                               Foreground="{StaticResource CompanionMutedText}" />
+                                </StackPanel>
+                            </Expander>
+                            <Expander Margin="0,12,0,0" Header="Adaptive Bluetooth Latency">
+                                <StackPanel Margin="4,10,8,0">
+                                    <CheckBox x:Name="AdaptiveBluetoothEnabledValue" Content="Enable adaptive latency switching" />
+                                    <TextBlock Margin="0,8,0,10" Foreground="{StaticResource CompanionMutedText}" TextWrapping="Wrap"
+                                               Text="Lower latency favors responsiveness; higher latency favors battery life. Values count skipped connection events, not milliseconds. With switching off, the idle latency is used." />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="110" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock VerticalAlignment="Center" Text="Active latency (0–99)" />
+                                        <TextBox x:Name="ActiveLatencyValue" Grid.Column="1" Margin="0,0,0,6"
+                                                 IsEnabled="{Binding IsChecked, ElementName=AdaptiveBluetoothEnabledValue}" />
+                                        <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="Idle / fixed latency (active–99)" />
+                                        <TextBox x:Name="IdleLatencyValue" Grid.Row="1" Grid.Column="1" Margin="0,0,0,6" />
+                                        <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="Use idle latency after (15–3600 seconds)" />
+                                        <TextBox x:Name="IdleAfterValue" Grid.Row="2" Grid.Column="1" Margin="0,0,0,6"
+                                                 IsEnabled="{Binding IsChecked, ElementName=AdaptiveBluetoothEnabledValue}" />
+                                        <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="Minimum time between changes (5–300 seconds)" />
+                                        <TextBox x:Name="MinimumSwitchValue" Grid.Row="3" Grid.Column="1" />
+                                    </Grid>
+                                    <CheckBox x:Name="IdleWhenLockedValue" Margin="0,10,0,0" Content="Use idle latency when Windows is locked"
+                                              IsEnabled="{Binding IsChecked, ElementName=AdaptiveBluetoothEnabledValue}" />
+                                    <TextBlock Margin="0,8,0,0" Foreground="{StaticResource CompanionMutedText}" TextWrapping="Wrap"
+                                               Text="Changes wait for the minimum interval. Windows may negotiate different values. These controls require firmware 0.10.0 or later with protocol 1.3." />
+                                    <Button Margin="0,10,0,0" HorizontalAlignment="Left" Click="OnResetBluetoothDefaultsClick" Content="Restore latency defaults" />
+                                </StackPanel>
+                            </Expander>
+                            <Expander Margin="0,12,0,0" Header="Connection Details">
+                                <StackPanel Margin="4,8,4,0">
+                                    <TextBlock x:Name="VersionValue" Foreground="{StaticResource CompanionMutedText}" />
+                                    <TextBlock x:Name="OwnershipValue" Foreground="{StaticResource CompanionMutedText}" Text="Layer ownership: unknown" />
+                                    <TextBlock x:Name="ShortcutActivityValue"
+                                               Margin="0,4,0,0"
+                                               Foreground="{StaticResource CompanionMutedText}"
+                                               Text="Waiting for shortcut input" />
+                                    <TextBlock x:Name="DetailValue"
+                                               Margin="0,4,0,0"
+                                               Foreground="{StaticResource CompanionMutedText}"
+                                               Text="Starting Go60 discovery"
+                                               TextWrapping="Wrap" />
+                                    <TextBlock x:Name="LogPathValue"
+                                               Margin="0,6,0,0"
+                                               Foreground="{StaticResource CompanionMutedText}"
+                                               FontSize="11"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Expander>
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
             </Grid>
+            </ScrollViewer>
         </Border>
 
-        <Grid Grid.Row="3" Margin="0,16,0,0">
+        <Grid Grid.Row="3" Margin="0,18,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -234,20 +309,24 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock x:Name="SaveStatusValue"
+            <TextBlock x:Name="SaveStatusValue" Grid.ColumnSpan="5" Margin="0,0,0,14"
+                       TextWrapping="Wrap"
                        VerticalAlignment="Center"
-                       Foreground="#4E5865"
+                       Foreground="{StaticResource CompanionMutedText}"
                        Text="Changes are applied without restarting the app." />
-            <Button Grid.Column="1" Margin="8,0,0,0" Click="OnReconnectClick" Content="Reconnect" />
-            <Button Grid.Column="2" Margin="8,0,0,0" Click="OnHideClick" Content="Hide settings" />
-            <Button Grid.Column="3" Margin="8,0,0,0" Click="OnExitClick" Content="Exit" />
-            <Button x:Name="SaveButton"
+            <Button Grid.Row="1" Grid.Column="1" Margin="8,0,0,0" Click="OnReconnectClick" Content="Reconnect" />
+            <Button Grid.Row="1" Grid.Column="2" Margin="8,0,0,0" Click="OnHideClick" Content="Hide settings" />
+            <Button Grid.Row="1" Grid.Column="3" Margin="8,0,0,0" Click="OnExitClick" Content="Exit" />
+            <Button x:Name="SaveButton" Grid.Row="1"
                     Grid.Column="4"
                     Margin="8,0,0,0"
-                    Background="#176B4D"
-                    Foreground="White"
+                    Background="{StaticResource CompanionAccent}"
+                    BorderBrush="{StaticResource CompanionAccent}"
+                    FontWeight="SemiBold"
+                    Foreground="#10271F"
                     Click="OnSaveClick"
                     Content="Save and apply" />
         </Grid>
     </Grid>
 </Window>
+

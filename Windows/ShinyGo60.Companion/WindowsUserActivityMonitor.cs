@@ -8,7 +8,7 @@ namespace ShinyGo60.Companion;
 
 public sealed class WindowsUserActivityMonitor : IDisposable
 {
-    private readonly BluetoothConnectionModePolicy policy;
+    private BluetoothConnectionModePolicy policy;
     private readonly Dispatcher dispatcher;
     private readonly DispatcherTimer pollTimer;
     private bool sessionLocked;
@@ -31,6 +31,12 @@ public sealed class WindowsUserActivityMonitor : IDisposable
     public event EventHandler<BluetoothConnectionModeChangedEventArgs>? ModeChanged;
 
     public BluetoothConnectionMode CurrentMode { get; private set; }
+
+    public void UpdatePolicy(BluetoothConnectionModePolicy updatedPolicy)
+    {
+        this.policy = updatedPolicy;
+        this.EvaluateMode();
+    }
 
     public void Start()
     {
@@ -67,7 +73,7 @@ public sealed class WindowsUserActivityMonitor : IDisposable
     private void EvaluateMode()
     {
         BluetoothConnectionMode mode;
-        if (this.sessionLocked)
+        if (!this.policy.Enabled || (this.sessionLocked && this.policy.UseIdleWhenLocked))
         {
             mode = BluetoothConnectionMode.PowerSaving;
         }
@@ -77,7 +83,7 @@ public sealed class WindowsUserActivityMonitor : IDisposable
         }
         else
         {
-            mode = this.policy.GetMode(sessionLocked: false, idleDuration);
+            mode = this.policy.GetMode(this.sessionLocked, idleDuration);
         }
 
         if (mode == this.CurrentMode)

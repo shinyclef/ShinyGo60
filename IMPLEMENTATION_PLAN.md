@@ -1,8 +1,8 @@
 # ShinyGo60 Implementation Plan
 
-Status: implementation is complete through the one-click builder; clean-account and remaining physical acceptance are in progress
+Status: implementation is complete through the one-click builder; Step 16 noninteractive hardening is in progress
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
 This document turns the goals in [README.md](README.md) into an implementation plan. It records the decisions made so far, the proposed user experience, the technical architecture, the major risks, and the order in which the work should be validated.
 

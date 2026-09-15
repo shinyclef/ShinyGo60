@@ -100,9 +100,16 @@ public static class ProtocolPacketCodec
             case ProtocolMessage.SetBluetoothConnectionModeCommand command:
                 RequireSessionAndId(command.SessionId, command.CommandId);
                 ValidateBluetoothConnectionMode(command.Mode);
+                if (!command.Parameters.IsValid)
+                {
+                    throw new ArgumentException("Bluetooth latency parameters are outside the supported bounds.", nameof(message));
+                }
                 BinaryPrimitives.WriteUInt32LittleEndian(payload, command.SessionId);
                 BinaryPrimitives.WriteUInt32LittleEndian(payload[4..], command.CommandId);
                 payload[8] = (byte)command.Mode;
+                BinaryPrimitives.WriteUInt16LittleEndian(payload[9..], command.Parameters.ActiveLatency);
+                BinaryPrimitives.WriteUInt16LittleEndian(payload[11..], command.Parameters.IdleLatency);
+                BinaryPrimitives.WriteUInt16LittleEndian(payload[13..], command.Parameters.MinimumSwitchSeconds);
                 break;
             case ProtocolMessage.CommandResult result:
                 RequireSessionAndId(result.SessionId, result.CommandId);
@@ -369,13 +376,15 @@ public static class ProtocolPacketCodec
         uint sessionId = BinaryPrimitives.ReadUInt32LittleEndian(payload);
         uint commandId = BinaryPrimitives.ReadUInt32LittleEndian(payload[4..]);
         BluetoothConnectionMode mode = (BluetoothConnectionMode)payload[8];
-        if (sessionId == 0 || commandId == 0 || !Enum.IsDefined(mode) || !IsZero(payload[9..]))
+        BluetoothLatencyParameters parameters = new(BinaryPrimitives.ReadUInt16LittleEndian(payload[9..]),
+            BinaryPrimitives.ReadUInt16LittleEndian(payload[11..]), BinaryPrimitives.ReadUInt16LittleEndian(payload[13..]));
+        if (sessionId == 0 || commandId == 0 || !Enum.IsDefined(mode) || !parameters.IsValid || payload[15] != 0)
         {
             message = null;
             return false;
         }
 
-        message = new ProtocolMessage.SetBluetoothConnectionModeCommand(sessionId, commandId, mode);
+        message = new ProtocolMessage.SetBluetoothConnectionModeCommand(sessionId, commandId, mode) { Parameters = parameters };
         return true;
     }
 

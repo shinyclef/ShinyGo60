@@ -406,7 +406,10 @@ static struct shinygo60_message execute_control_command(
 
         enum shinygo60_bluetooth_mode_result mode_result = shinygo60_ble_set_connection_mode(
             (enum shinygo60_bluetooth_connection_mode)
-                request->payload.bluetooth_mode_command.mode);
+                request->payload.bluetooth_mode_command.mode,
+            request->payload.bluetooth_mode_command.active_latency,
+            request->payload.bluetooth_mode_command.idle_latency,
+            request->payload.bluetooth_mode_command.minimum_switch_seconds);
         switch (mode_result) {
         case SHINYGO60_BLUETOOTH_MODE_APPLIED:
             return create_command_result(

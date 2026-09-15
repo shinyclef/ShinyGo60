@@ -1,5 +1,9 @@
 # ShinyGo60 Windows workspace
 
+Companion 1.3.0 adds [automatic connection issue summaries and history](../Custom%20Firmware/BuildSupport/COMPANION_ISSUE_HISTORY.md).
+
+Companion 1.2.0 adds configurable [adaptive Bluetooth latency](../Custom%20Firmware/BuildSupport/ADAPTIVE_BLUETOOTH_SETTINGS.md), paired with firmware 0.10.0 and protocol 1.3.
+
 This workspace contains the Windows 11 tooling and shared application contracts:
 
 | Project | Responsibility |
@@ -95,6 +99,11 @@ Step 7's `Go60KeymapInspector` validates exported metadata while treating all ke
 writes `layout-manifest.json` plus `shinygo60_layout.h`; both carry the same deterministic layout identity. The shared `LayoutManifestJson` contract is used for
 strict JSON writing and reading.
 
+Layout identity now hashes the protocol version and ordered layer IDs/names, so changing bindings or export formatting does not invalidate the companion session.
+The separate `keymapSha256` still identifies the exact source bytes for firmware verification. Moving from the old full-source identity requires one matching
+manifest update and companion restart with the first firmware built this way. Subsequent binding-only flashes reconnect automatically; changing layer names,
+order, count, or protocol still requires a matching manifest.
+
 Step 15 wraps that pipeline in the WPF `ShinyGo60.Builder`. It discovers exactly one top-level `.keymap` in `Input`, accepts a file dropped onto the executable or
 window, and prompts when multiple candidates exist. It preflights Docker Desktop, the exact pinned image, and a 1 GB working-space reserve; reports real pipeline
 stages; cancels the exact build container; opens a successful atomic output set; and offers cleanup limited to GUID-named temporary folders and the isolated
@@ -124,3 +133,19 @@ acceptance evidence. Step 8 passed two genuine network-disabled builds from the 
 Ordinary logs use one JSON object per line. Log event names, revisions, hashes, durations, sizes, exit codes, and sanitized error summaries. Never log keymap
 contents, raw protocol payloads, pairing material, secrets, or stable device identifiers. Full compiler output belongs in the user-requested build log under the
 ignored `Output` directory, not in ordinary companion diagnostics.
+
+Companion 1.1.0 collects production firmware 0.9.0 connection history in the background over Bluetooth. It saves collection progress across restarts and pauses
+diagnostic reads for control activity. Settings → Connection details → **Export diagnostics…** saves recent logs, firmware history, software versions, and
+Bluetooth driver details to a local ZIP. Saving does not upload anything.
+
+Publish the companion with a matching manifest and your settings:
+
+```powershell
+& '.\Windows\Publish-Companion.ps1' `
+    -ManifestPath '.\Output\ProductionDiagnostics-20260908\layout-manifest.json' `
+    -ConfigurationPath '.\Output\ProductionDiagnostics-20260908\companion-settings.json'
+```
+
+The script validates the staged self-contained package, replaces the installation without retaining old copies, and updates the workspace shortcut and any enabled startup entry.
+Startup detects a different running version/build and either hands over from an older production version or displays a conflict that requires exiting that copy.
+See the [production diagnostic guide](../Custom%20Firmware/BuildSupport/PRODUCTION_DIAGNOSTICS.md) for upgrade instructions, retention limits, and verification.

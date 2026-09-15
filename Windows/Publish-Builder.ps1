@@ -31,6 +31,7 @@ try {
 
     & dotnet publish $projectPath `
         --configuration Release `
+        --maxcpucount:1 `
         --runtime $RuntimeIdentifier `
         --self-contained true `
         --output $stageRoot `
@@ -61,6 +62,8 @@ try {
         -LiteralPath (Join-Path $repositoryRoot 'Custom Firmware\BuildSupport\STEP15_ONE_CLICK_BUILDER.md') `
         -Destination (Join-Path $stageRoot 'Builder Guide.md')
     Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination (Join-Path $stageRoot 'LICENSE.txt')
+    # Read the maintained workspace on every build instead of freezing firmware at publish time.
+    Set-Content -LiteralPath (Join-Path $stageRoot 'firmware-source.txt') -Value $repositoryRoot -Encoding utf8
 
     $publishedExecutable = Join-Path $stageRoot 'ShinyGo60.Builder.exe'
     if (-not (Test-Path -LiteralPath $publishedExecutable -PathType Leaf)) {
@@ -91,6 +94,11 @@ try {
         foreach ($managedName in @('Custom Firmware', 'Builder Guide.md', 'LICENSE.txt')) {
             $managedPath = Join-Path $resolvedArtifactRoot $managedName
             if (Test-Path -LiteralPath $managedPath) {
+                $resolvedManagedPath = (Resolve-Path -LiteralPath $managedPath).Path
+                if ((Split-Path -Parent $resolvedManagedPath) -ne $resolvedArtifactRoot -or
+                    (Get-Item -LiteralPath $resolvedManagedPath).LinkType) {
+                    throw "Refusing to replace unexpected package path '$resolvedManagedPath'."
+                }
                 Remove-Item -LiteralPath $managedPath -Recurse -Force
             }
         }
@@ -102,6 +110,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $stageRoot 'Custom Firmware') -Destination $artifactRoot -Recurse
     Copy-Item -LiteralPath (Join-Path $stageRoot 'Builder Guide.md') -Destination $artifactRoot
     Copy-Item -LiteralPath (Join-Path $stageRoot 'LICENSE.txt') -Destination $artifactRoot
+    Copy-Item -LiteralPath (Join-Path $stageRoot 'firmware-source.txt') -Destination $artifactRoot -Force
     Copy-Item -LiteralPath (Join-Path $stageRoot 'Input\README.md') -Destination (Join-Path $artifactRoot 'Input') -Force
     Copy-Item -LiteralPath $publishedExecutable -Destination $artifactRoot -Force
 
@@ -109,10 +118,22 @@ try {
         throw 'The staged builder could not be copied into the release folder.'
     }
 
+    $shortcutShell = New-Object -ComObject WScript.Shell
+    $shortcut = $shortcutShell.CreateShortcut((Join-Path $repositoryRoot 'ShinyGo60 Builder.lnk'))
+    $shortcut.TargetPath = Join-Path $artifactRoot 'ShinyGo60.Builder.exe'
+    $shortcut.WorkingDirectory = $repositoryRoot
+    $shortcut.Arguments = ''
+    $shortcut.Save()
+
     Write-Output $artifactRoot
 }
 finally {
     if (Test-Path -LiteralPath $stageRoot) {
+        $resolvedStage = (Resolve-Path -LiteralPath $stageRoot).Path
+        if ((Split-Path -Parent $resolvedStage) -ne [IO.Path]::GetFullPath($artifactParent) -or
+            (Get-Item -LiteralPath $resolvedStage).LinkType) {
+            throw "Refusing to remove unexpected staging path '$resolvedStage'."
+        }
         Remove-Item -LiteralPath $stageRoot -Recurse -Force
     }
 }

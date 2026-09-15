@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using ShinyGo60.Companion.Core.Control;
 using ShinyGo60.Companion.Core.Telemetry;
 using ShinyGo60.Platform.Windows.Transports;
+using ShinyGo60.Platform.Windows.Diagnostics;
 using ShinyGo60.Protocol;
 using ShinyGo60.Protocol.Manifests;
 using ShinyGo60.Protocol.Messages;
@@ -18,6 +19,17 @@ internal static class TransportSpikeApplication
     {
         try
         {
+            if (args is ["export-diagnostics", string manifestPath, string destination])
+            {
+                LayoutManifest exportManifest = await LayoutManifestJson.ReadAsync(manifestPath).ConfigureAwait(false);
+                string logs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ShinyGo60", "Logs");
+                string activeLog = Directory.EnumerateFiles(logs, "companion-*.jsonl").OrderDescending(StringComparer.Ordinal).First();
+                await WindowsDiagnosticBundle.SaveAsync(logs, activeLog, destination,
+                    "Not queried (exported by TransportSpike)", exportManifest).ConfigureAwait(false);
+                Console.WriteLine($"Saved diagnostic bundle: {destination}");
+                return 0;
+            }
+
             SpikeOptions options = SpikeOptions.Parse(args);
             LayoutManifest manifest = await LayoutManifestJson.ReadAsync(options.ManifestPath).ConfigureAwait(false);
             if (manifest.ProtocolVersion != ProtocolVersion.Current)

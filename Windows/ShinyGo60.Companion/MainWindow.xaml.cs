@@ -1,11 +1,13 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using ShinyGo60.Companion.Core.Configuration;
+using ShinyGo60.Companion.Core.Diagnostics;
 using ShinyGo60.Companion.Core.Presentation;
 using ShinyGo60.Companion.Core.Sessions;
 using ShinyGo60.Companion.Core.Shortcuts;
@@ -15,13 +17,14 @@ namespace ShinyGo60.Companion;
 
 public partial class MainWindow : Window
 {
-    private static readonly Brush CurrentBackground = CreateBrush(0xD9, 0xF3, 0xE8);
-    private static readonly Brush CurrentForeground = CreateBrush(0x12, 0x65, 0x43);
-    private static readonly Brush StaleBackground = CreateBrush(0xFF, 0xED, 0xC7);
-    private static readonly Brush StaleForeground = CreateBrush(0x8A, 0x55, 0x12);
-    private static readonly Brush DisconnectedBackground = CreateBrush(0xE7, 0xEA, 0xEE);
-    private static readonly Brush DisconnectedForeground = CreateBrush(0x45, 0x4D, 0x58);
+    private static readonly Brush CurrentBackground = CreateBrush(0x1D, 0x3B, 0x32);
+    private static readonly Brush CurrentForeground = CreateBrush(0x78, 0xE2, 0xBD);
+    private static readonly Brush StaleBackground = CreateBrush(0x40, 0x32, 0x20);
+    private static readonly Brush StaleForeground = CreateBrush(0xF3, 0xCA, 0x83);
+    private static readonly Brush DisconnectedBackground = CreateBrush(0x29, 0x32, 0x3C);
+    private static readonly Brush DisconnectedForeground = CreateBrush(0xBB, 0xC6, 0xD2);
     private bool allowClose;
+    private string issueHistoryText = string.Empty;
 
     public MainWindow(
         LayoutManifest manifest,
@@ -62,6 +65,7 @@ public partial class MainWindow : Window
         this.DataContext = this;
         this.TransportPreferenceValue.ItemsSource = Enum.GetValues<TransportPreference>();
         this.LogPathValue.Text = $"Diagnostic log: {diagnosticPath}";
+        this.VersionValue.Text = $"Companion {typeof(App).Assembly.GetName().Version}";
         this.ApplySavedConfiguration(configuration, startWithWindows);
     }
 
@@ -77,6 +81,27 @@ public partial class MainWindow : Window
 
     public ObservableCollection<ShortcutEditorRow> ShortcutRows { get; }
 
+    public void UpdateConnectionIssues(ConnectionIssueReport report)
+    {
+        this.LatestConnectionIssueValue.Text = report.Issues.Count == 0
+            ? "No connection issues found in the available logs."
+            : $"Last connection issue: {report.Issues[0].StartedUtc.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)}" +
+              (report.Issues[0].Estimated ? " (estimated)" : string.Empty);
+        this.IssueHistoryStatusValue.Text = report.CollectionStatus;
+        string historyText = string.Join(Environment.NewLine + Environment.NewLine, report.Issues.Select(issue => issue.DisplayText));
+        string displayText = historyText.Length == 0 ? "No connection issues found in the available logs." : historyText;
+        if (this.IssueHistoryValue.Text != displayText)
+        {
+            this.IssueHistoryValue.Text = displayText;
+            this.CopyIssueHistoryStatusValue.Text = string.Empty;
+        }
+
+        this.issueHistoryText = historyText;
+        this.CopyIssueHistoryButton.IsEnabled = historyText.Length > 0;
+    }
+
+    public void ShowIssueHistoryError(string message) => this.IssueHistoryStatusValue.Text = message;
+
     public ObservableCollection<WidgetTaskbarOption> WidgetTaskbarOptions { get; }
 
     public void ApplySavedConfiguration(ResolvedCompanionConfiguration configuration, bool startWithWindows)
@@ -85,6 +110,7 @@ public partial class MainWindow : Window
         this.TransportPreferenceValue.SelectedItem = configuration.TransportPreference;
         this.SelectWidgetTaskbar(configuration.WidgetTaskbar);
         this.StartWithWindowsValue.IsChecked = startWithWindows;
+        this.ShowBluetoothSettings(configuration.AdaptiveBluetooth);
         this.ShortcutRows.Clear();
         foreach (ShortcutBinding binding in configuration.Shortcuts)
         {
@@ -155,6 +181,19 @@ public partial class MainWindow : Window
     public void PrepareForExit()
     {
         this.allowClose = true;
+    }
+
+    private void OnCopyIssueHistoryClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Clipboard.SetText(this.issueHistoryText);
+            this.CopyIssueHistoryStatusValue.Text = "History copied.";
+        }
+        catch (ExternalException)
+        {
+            this.CopyIssueHistoryStatusValue.Text = "The clipboard is busy. Please try Copy All again.";
+        }
     }
 
     protected override void OnClosing(CancelEventArgs e)
@@ -329,6 +368,14 @@ public partial class MainWindow : Window
     {
         _ = sender;
         _ = e;
+        if (!ushort.TryParse(this.ActiveLatencyValue.Text, out ushort activeLatency) ||
+            !ushort.TryParse(this.IdleLatencyValue.Text, out ushort idleLatency) ||
+            !int.TryParse(this.IdleAfterValue.Text, out int idleAfterSeconds) ||
+            !ushort.TryParse(this.MinimumSwitchValue.Text, out ushort minimumSwitchSeconds))
+        {
+            this.ShowSaveResult("Enter whole numbers in the Bluetooth latency settings.", succeeded: false);
+            return;
+        }
         TransportPreference transport = this.TransportPreferenceValue.SelectedItem is TransportPreference selected
             ? selected
             : TransportPreference.Automatic;
@@ -343,6 +390,15 @@ public partial class MainWindow : Window
                 .ToArray())
         {
             WidgetTaskbar = widgetTaskbar,
+            AdaptiveBluetooth = new AdaptiveBluetoothSettings
+            {
+                Enabled = this.AdaptiveBluetoothEnabledValue.IsChecked == true,
+                ActiveLatency = activeLatency,
+                IdleLatency = idleLatency,
+                IdleAfterSeconds = idleAfterSeconds,
+                MinimumSwitchSeconds = minimumSwitchSeconds,
+                UseIdleWhenLocked = this.IdleWhenLockedValue.IsChecked == true,
+            },
         };
         this.SetSaving(true);
         if (this.SettingsSaveRequested is null)
@@ -363,6 +419,22 @@ public partial class MainWindow : Window
         this.ReconnectRequested?.Invoke(this, EventArgs.Empty);
     }
 
+    private void ShowBluetoothSettings(AdaptiveBluetoothSettings settings)
+    {
+        this.AdaptiveBluetoothEnabledValue.IsChecked = settings.Enabled;
+        this.ActiveLatencyValue.Text = settings.ActiveLatency.ToString(System.Globalization.CultureInfo.CurrentCulture);
+        this.IdleLatencyValue.Text = settings.IdleLatency.ToString(System.Globalization.CultureInfo.CurrentCulture);
+        this.IdleAfterValue.Text = settings.IdleAfterSeconds.ToString(System.Globalization.CultureInfo.CurrentCulture);
+        this.MinimumSwitchValue.Text = settings.MinimumSwitchSeconds.ToString(System.Globalization.CultureInfo.CurrentCulture);
+        this.IdleWhenLockedValue.IsChecked = settings.UseIdleWhenLocked;
+    }
+
+    private void OnResetBluetoothDefaultsClick(object sender, RoutedEventArgs e)
+    {
+        this.ShowBluetoothSettings(new AdaptiveBluetoothSettings());
+        this.ShowSaveResult("Latency defaults loaded. Choose Save and apply to use them.", succeeded: true);
+    }
+
     private void OnHideClick(object sender, RoutedEventArgs e)
     {
         _ = sender;
@@ -377,3 +449,4 @@ public partial class MainWindow : Window
         this.ExitRequested?.Invoke(this, EventArgs.Empty);
     }
 }
+

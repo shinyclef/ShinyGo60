@@ -1,6 +1,15 @@
 <Application x:Class="ShinyGo60.Companion.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ThemeMode="Dark"
              ShutdownMode="OnExplicitShutdown">
-    <Application.Resources />
+    <Application.Resources>
+        <SolidColorBrush x:Key="CompanionBackground" Color="#101418" />
+        <SolidColorBrush x:Key="CompanionSurface" Color="#191F26" />
+        <SolidColorBrush x:Key="CompanionBorder" Color="#303A45" />
+        <SolidColorBrush x:Key="CompanionText" Color="#F0F4F8" />
+        <SolidColorBrush x:Key="CompanionMutedText" Color="#A8B4C2" />
+        <SolidColorBrush x:Key="CompanionAccent" Color="#78E2BD" />
+    </Application.Resources>
 </Application>
+

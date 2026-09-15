@@ -3,7 +3,9 @@ param(
     [Parameter(Mandatory)]
     [string] $Workspace,
 
-    [switch] $AllowNetwork
+    [switch] $AllowNetwork,
+
+    [switch] $ConnectionDiagnostics
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,6 +14,7 @@ $imageName = 'shinygo60-builder:v25.11'
 $resolvedWorkspace = (Resolve-Path -LiteralPath $Workspace).Path
 $modulePath = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..\Module')).Path
 $networkMode = if ($AllowNetwork) { 'default' } else { 'none' }
+$diagnosticsMode = if ($ConnectionDiagnostics) { '1' } else { '0' }
 
 $managedLabel = docker image inspect $imageName --format '{{index .Config.Labels "io.shinygo60.managed"}}'
 if ($LASTEXITCODE -ne 0 -or $managedLabel -ne 'true') {
@@ -26,6 +29,8 @@ docker run --rm `
     --mount "type=bind,source=$modulePath,target=/shinygo60-module,readonly" `
     -e UID=0 `
     -e GID=0 `
+    -e "SHINYGO60_CONNECTION_DIAGNOSTICS=$diagnosticsMode" `
+    --mount "type=bind,source=$PSScriptRoot\entrypoint.sh,target=/usr/local/bin/shinygo60-build,readonly" `
     $imageName
 
 if ($LASTEXITCODE -ne 0) {

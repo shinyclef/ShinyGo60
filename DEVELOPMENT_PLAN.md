@@ -1,8 +1,8 @@
 # ShinyGo60 Development Plan
 
-Status: Step 15 implementation complete; clean-account builder acceptance and remaining physical checks are in progress
+Status: Step 16 noninteractive hardening is in progress; clean-account and remaining physical checks are pending
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
 This is the ordered execution plan for ShinyGo60. It turns the architecture in
 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) into development steps with explicit dependencies, deliverables, and completion gates.
@@ -635,14 +635,14 @@ Work:
 
 - [ ] Run the complete verification matrix from IMPLEMENTATION_PLAN.md.
 - [ ] Test USB/BLE switching, repeated reconnects, sleep cycles, radio toggles, and power cycles.
-- [ ] Test the app starting before and after the keyboard.
+- [x] Test the app starting before and after the keyboard.
 - [ ] Test multiple serial devices and multiple paired Go60 host profiles.
-- [ ] Inject stale manifests, corrupted frames, duplicate messages, delays, and event bursts.
-- [ ] Test with the right half absent and with BLE/TRRS inter-half switching.
+- [x] Inject stale manifests, corrupted frames, duplicate messages, delays, and event bursts.
+- [x] Test with the right half absent and with BLE/TRRS inter-half switching.
 - [ ] Measure typing latency, command latency, idle CPU use, memory use, and wireless power impact.
 - [ ] Run multi-day BLE-heavy soak testing.
 - [ ] Repeatedly terminate and restart the companion during held and persistent actions.
-- [ ] Verify the Go60 remains a normal keyboard with ShinyGo60 software absent.
+- [x] Verify the Go60 remains a normal keyboard with ShinyGo60 software absent.
 
 Deliverables:
 
@@ -657,6 +657,19 @@ Done when:
 - No unacceptable typing, battery, CPU, or reconnect regression remains.
 
 Depends on: Steps 13, 14, and 15.
+
+The first noninteractive hardening tranche completed on 2026-09-04 without starting the companion, builder UI, Docker Desktop, or a real keyboard transport. The
+Release solution, 15 offline suites, native C codec, static checks, and packaged-builder inventory passed. New deterministic stress coverage exercised corrupted
+packets, concurrent telemetry bursts, 5,000 interrupted layer sessions, and 100 repeated companion lifecycle cycles over fake USB and Bluetooth transports.
+A five-process bounded soak repeated the complete harness without a failure or lingering process and recorded stable process-resource peaks. Earlier physical
+evidence closes the startup-order, missing-half/split, and companion-absent rows above. A fresh network-disabled Docker build reused the pinned image without
+leaving an image or container, and a 91-second normal-use Bluetooth sample found low companion CPU use and bounded short-term process resources. The sample
+also exposed a stale Windows startup registration. The current-user Run entry was corrected to the verified active manifest, read back exactly, and immediately
+validated by a background launch that kept settings closed and connected over Bluetooth. Long-duration soak work and the remaining hardware-specific rows
+stay open.
+
+Design and evidence are recorded in
+[Custom Firmware/BuildSupport/STEP16_HARDENING.md](Custom%20Firmware/BuildSupport/STEP16_HARDENING.md).
 
 ## Step 17: Validate flashing, upgrades, and rollback
 

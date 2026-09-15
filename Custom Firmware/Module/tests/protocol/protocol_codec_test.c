@@ -124,6 +124,9 @@ static void verify_golden_vectors(void)
     assert(message.payload.bluetooth_mode_command.session_id == 0x89abcdefU);
     assert(message.payload.bluetooth_mode_command.command_id == 0x11223348U);
     assert(message.payload.bluetooth_mode_command.mode == SHINYGO60_BLUETOOTH_INTERACTIVE);
+    assert(message.payload.bluetooth_mode_command.active_latency == 4U);
+    assert(message.payload.bluetooth_mode_command.idle_latency == 30U);
+    assert(message.payload.bluetooth_mode_command.minimum_switch_seconds == 30U);
 }
 
 static void assert_decode_result(
@@ -174,7 +177,19 @@ static void verify_malformed_packets(void)
     assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_INVALID_PAYLOAD);
 
     memcpy(packet, set_bluetooth_connection_mode, sizeof(packet));
-    packet[13] = 1U;
+    packet[19] = 1U;
+    assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_INVALID_PAYLOAD);
+
+    memcpy(packet, set_bluetooth_connection_mode, sizeof(packet));
+    packet[15] = 100U;
+    assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_INVALID_PAYLOAD);
+
+    memcpy(packet, set_bluetooth_connection_mode, sizeof(packet));
+    packet[13] = 31U;
+    assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_INVALID_PAYLOAD);
+
+    memcpy(packet, set_bluetooth_connection_mode, sizeof(packet));
+    packet[17] = 0U;
     assert_decode_result(packet, sizeof(packet), SHINYGO60_DECODE_INVALID_PAYLOAD);
 
     memcpy(packet, state_snapshot, sizeof(packet));

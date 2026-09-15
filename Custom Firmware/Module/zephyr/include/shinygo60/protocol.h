@@ -9,7 +9,7 @@
 #define SHINYGO60_PACKET_MAGIC_0 0x53U
 #define SHINYGO60_PACKET_MAGIC_1 0x47U
 #define SHINYGO60_PROTOCOL_MAJOR 1U
-#define SHINYGO60_PROTOCOL_MINOR 2U
+#define SHINYGO60_PROTOCOL_MINOR 3U
 #define SHINYGO60_PROTOCOL_VERSION ((SHINYGO60_PROTOCOL_MAJOR << 4U) | SHINYGO60_PROTOCOL_MINOR)
 #define SHINYGO60_NO_LAYER UINT8_MAX
 #define SHINYGO60_MAXIMUM_LEASE_UNITS 50U
@@ -179,6 +179,9 @@ struct shinygo60_message {
             uint32_t session_id;
             uint32_t command_id;
             uint8_t mode;
+            uint16_t active_latency;
+            uint16_t idle_latency;
+            uint16_t minimum_switch_seconds;
         } bluetooth_mode_command;
         struct {
             uint32_t session_id;
@@ -229,7 +232,8 @@ bool shinygo60_usb_send(const uint8_t packet[SHINYGO60_PACKET_SIZE]);
 bool shinygo60_ble_send(const uint8_t packet[SHINYGO60_PACKET_SIZE]);
 
 enum shinygo60_bluetooth_mode_result shinygo60_ble_set_connection_mode(
-    enum shinygo60_bluetooth_connection_mode mode);
+    enum shinygo60_bluetooth_connection_mode mode,
+    uint16_t active_latency, uint16_t idle_latency, uint16_t minimum_switch_seconds);
 
 void shinygo60_ble_reset_connection_mode(void);
 

@@ -9,16 +9,42 @@ Recorded: 2026-09-03 on Windows 11
 `ShinyGo60.Builder.exe` turns one complete MoErgo-exported Go60 `.keymap` into one matched output set:
 
 ```text
-Output/ShinyGo60-<timestamp>-<layout>/
-|-- ShinyGo60-<layout>.uf2
+Output/
+|-- ShinyGo60.uf2
 |-- layout-manifest.json
-`-- build.log
+|-- build.log
+|-- firmware-build.json
+`-- Firmware-<creation-date>_<creation-time>/  (up to four older builds)
 ```
+
+The newest successful build is always directly in `Output`. On the next successful
+build, its four matched files move into a folder timestamped with that build's
+original creation time, in the computer's local time zone. Metadata preserves the
+date across moves. Five builds are kept in total: the current one plus four archives;
+the oldest is removed after publication whenever more than five exist. Failed compilation leaves the current
+build untouched. File-move failures roll back completed moves. The output store
+serializes publication and only prunes marked archives containing the expected files.
+
+Development evidence and diagnostic reports previously mixed into Output are stored
+separately in the workspace's `Build Records` folder. They are outside automatic
+firmware retention. Do not manually put extra files inside firmware archives.
+Failed-build logs are saved in `Build Records/Failures`, next to Output.
 
 The exact keymap bytes are preserved. The builder adds the maintained ShinyGo60 module, builds both keyboard halves with the pinned MoErgo v25.11 environment,
 validates both UF2 segments and the embedded layout identity, then publishes all three files together. It never flashes the keyboard.
 
 ## Normal use
+
+The workspace package now contains `firmware-source.txt`, written by `Windows/Publish-Builder.ps1`. It names the maintained Go60 workspace explicitly.
+Every launch uses that workspace's current firmware module, build template, Input folder, and Output folder. Firmware changes take effect on the next build
+without republishing the executable. If that source is missing or incomplete, startup fails visibly instead of silently using the bundled copy.
+This keeps ShinyGo60 changes current while retaining the pinned MoErgo v25.11 backend; it does not download unreviewed upstream firmware.
+
+In this workspace, start Docker Desktop, place the new `.keymap` in the main `Input` folder, and double-click `ShinyGo60 Builder.lnk`.
+Dragging a keymap onto the executable still works. The publish script refreshes the executable, bundled support, source link, and workspace shortcut.
+After flashing a new layout to both halves, replace the companion installation's `layout-manifest.json` with the matching build output before restarting it.
+
+The following describes a standalone package with no `firmware-source.txt`; it uses its bundled support files:
 
 1. Install and start Docker Desktop.
 2. Keep the supplied `ShinyGo60 Builder` folder together.
@@ -66,6 +92,14 @@ Running `Windows/Publish-Builder.ps1` again updates only packaged program and su
 local `.keymap` files in `Input` plus every generated set in `Output` in place.
 
 ## Verification
+
+Workspace-source update verified on 2026-09-09: solution compilation passed with zero warnings/errors and all 18 regression groups passed. Coverage includes
+preferring the configured workspace over complete bundled support and rejecting missing/invalid configured sources. The refreshed self-contained package and
+workspace shortcut point to the maintained root. Using that configured root through the shared build pipeline compiled the new Input keymap in 22.80 seconds;
+the validated two-half output contains firmware 0.9.0 and matches the input hash. Evidence is `Output/builder-live-source-*.log` and
+`Output/builder-live-source-verification.json`. No flashing or UI automation was performed. Rider inspections were unavailable because Go60 was not open there.
+
+Original Step 15 verification follows:
 
 - The complete Debug solution builds with zero warnings and errors.
 - All 14 offline Windows suites pass.

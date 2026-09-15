@@ -214,10 +214,16 @@ static bool decode_bluetooth_mode_command(
     message->payload.bluetooth_mode_command.session_id = read_u32_le(payload);
     message->payload.bluetooth_mode_command.command_id = read_u32_le(&payload[4]);
     message->payload.bluetooth_mode_command.mode = payload[8];
+    message->payload.bluetooth_mode_command.active_latency = read_u16_le(&payload[9]);
+    message->payload.bluetooth_mode_command.idle_latency = read_u16_le(&payload[11]);
+    message->payload.bluetooth_mode_command.minimum_switch_seconds = read_u16_le(&payload[13]);
     return message->payload.bluetooth_mode_command.session_id != 0U &&
            message->payload.bluetooth_mode_command.command_id != 0U &&
            message->payload.bluetooth_mode_command.mode <= SHINYGO60_BLUETOOTH_INTERACTIVE &&
-           all_zero(&payload[9], 7U);
+           message->payload.bluetooth_mode_command.active_latency <= message->payload.bluetooth_mode_command.idle_latency &&
+           message->payload.bluetooth_mode_command.idle_latency <= 99U &&
+           message->payload.bluetooth_mode_command.minimum_switch_seconds >= 5U &&
+           message->payload.bluetooth_mode_command.minimum_switch_seconds <= 300U && payload[15] == 0U;
 }
 
 static bool decode_command_result(const uint8_t *payload, struct shinygo60_message *message)
@@ -452,13 +458,20 @@ static bool encode_bluetooth_mode_command(
 {
     if (message->payload.bluetooth_mode_command.session_id == 0U ||
         message->payload.bluetooth_mode_command.command_id == 0U ||
-        message->payload.bluetooth_mode_command.mode > SHINYGO60_BLUETOOTH_INTERACTIVE) {
+        message->payload.bluetooth_mode_command.mode > SHINYGO60_BLUETOOTH_INTERACTIVE ||
+        message->payload.bluetooth_mode_command.active_latency > message->payload.bluetooth_mode_command.idle_latency ||
+        message->payload.bluetooth_mode_command.idle_latency > 99U ||
+        message->payload.bluetooth_mode_command.minimum_switch_seconds < 5U ||
+        message->payload.bluetooth_mode_command.minimum_switch_seconds > 300U) {
         return false;
     }
 
     write_u32_le(payload, message->payload.bluetooth_mode_command.session_id);
     write_u32_le(&payload[4], message->payload.bluetooth_mode_command.command_id);
     payload[8] = message->payload.bluetooth_mode_command.mode;
+    write_u16_le(&payload[9], message->payload.bluetooth_mode_command.active_latency);
+    write_u16_le(&payload[11], message->payload.bluetooth_mode_command.idle_latency);
+    write_u16_le(&payload[13], message->payload.bluetooth_mode_command.minimum_switch_seconds);
     return true;
 }
 

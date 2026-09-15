@@ -1,23 +1,29 @@
 { pkgs ? import <nixpkgs> {}
 , firmware ? import /src {}
 , shinyGo60Module ? /shinygo60-module
+, connectionDiagnostics ? false
 }:
 
 let
   config = ./.;
   common = {
     keymap = "${config}/go60.keymap";
-    kconfig = "${config}/go60.conf";
+    kconfig = if connectionDiagnostics then builtins.toFile "go60-diagnostics.conf"
+      (builtins.readFile "${config}/go60.conf" + "\n" +
+       builtins.readFile "${shinyGo60Module}/connection-diagnostics.conf")
+      else "${config}/go60.conf";
     extraModules = [ shinyGo60Module ];
   };
 
   # The pinned Studio snippet supplies only the proven composite USB CDC node
   # and Kconfig settings. ShinyGo60 provides its own small protocol handler.
-  go60_left = firmware.zmk.override (common // {
+  go60_left = (firmware.zmk.override (common // {
     board = "go60_lh";
     snippets = [ "studio-rpc-usb-uart" ];
-  });
-  go60_right = firmware.zmk.override (common // { board = "go60_rh"; });
+  }));
+  go60_right = (firmware.zmk.override (common // {
+    board = "go60_rh";
+  }));
   combined = firmware.combine_uf2 go60_left go60_right "go60";
 
 in combined.overrideAttrs (_: {
@@ -30,5 +36,7 @@ in combined.overrideAttrs (_: {
     cp ${go60_right}/zmk.elf $out/go60_rh.elf
     cp ${go60_left}/zmk.kconfig $out/go60_lh.kconfig
     cp ${go60_right}/zmk.kconfig $out/go60_rh.kconfig
+    cp ${go60_left}/zmk.dts $out/go60_lh.dts
+    cp ${go60_right}/zmk.dts $out/go60_rh.dts
   '';
 })

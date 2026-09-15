@@ -67,6 +67,28 @@ internal static class BuilderExperienceTests
         Directory.CreateDirectory(nestedDirectory);
 
         AssertEx.Equal(Path.GetFullPath(caseRoot), BuilderInstallationLocator.FindRoot(nestedDirectory));
+
+        // A published builder must prefer the maintained source even when an older bundled copy is complete.
+        string packageRoot = Path.Combine(caseRoot, "artifacts", "ShinyGo60 Builder");
+        string packagedTemplate = Path.Combine(packageRoot, Path.GetRelativePath(caseRoot, templateFile));
+        string packagedModule = Path.Combine(packageRoot, Path.GetRelativePath(caseRoot, moduleFile));
+        Directory.CreateDirectory(Path.GetDirectoryName(packagedTemplate)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(packagedModule)!);
+        File.WriteAllText(packagedTemplate, "old bundled template");
+        File.WriteAllText(packagedModule, "old bundled module");
+        string sourceFile = Path.Combine(packageRoot, "firmware-source.txt");
+        File.WriteAllText(sourceFile, caseRoot + Environment.NewLine);
+        AssertEx.Equal(Path.GetFullPath(caseRoot), BuilderInstallationLocator.FindRoot(packageRoot));
+        FirmwareBuildRequest request = PinnedFirmwareBuild.CreateRequest(
+            BuilderInstallationLocator.FindRoot(packageRoot), "input.keymap", "generated", "output");
+        AssertEx.Equal(Path.Combine(caseRoot, "Custom Firmware", "Module"), request.FirmwareModuleDirectory);
+
+        File.WriteAllText(sourceFile, Path.Combine(caseRoot, "missing source"));
+        AssertEx.Throws<DirectoryNotFoundException>(() => BuilderInstallationLocator.FindRoot(packageRoot));
+        File.WriteAllText(sourceFile, "");
+        AssertEx.Throws<InvalidDataException>(() => BuilderInstallationLocator.FindRoot(packageRoot));
+        File.Delete(sourceFile);
+        AssertEx.Equal(Path.GetFullPath(packageRoot), BuilderInstallationLocator.FindRoot(packageRoot));
     }
 
     private static async ValueTask VerifyPrerequisiteStatesAsync(string caseRoot)

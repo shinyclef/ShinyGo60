@@ -6,6 +6,7 @@ using System.Threading.Channels;
 using ShinyGo60.Companion.Core.Configuration;
 using ShinyGo60.Companion.Core.Connections;
 using ShinyGo60.Companion.Core.Control;
+using ShinyGo60.Companion.Core.Diagnostics;
 using ShinyGo60.Companion.Core.Reconnection;
 using ShinyGo60.Companion.Core.Shortcuts;
 using ShinyGo60.Companion.Core.Telemetry;
@@ -45,6 +46,7 @@ public sealed class CompanionService : ICompanionSession
     private long generation;
     private bool acceptingShortcuts;
     private bool disposed;
+    private readonly ConnectionHistoryCollector historyCollector;
 
     public CompanionService(
         LayoutManifest manifest,
@@ -52,7 +54,8 @@ public sealed class CompanionService : ICompanionSession
         IKeyboardTransportFactory transportFactory,
         IReconnectDelayPolicy reconnectDelayPolicy,
         IDiagnosticSink diagnosticSink,
-        CompanionServiceOptions? options = null)
+        CompanionServiceOptions? options = null,
+        string? historyCheckpointPath = null)
     {
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -74,9 +77,15 @@ public sealed class CompanionService : ICompanionSession
         ValidateBindings(manifest, configuration.Shortcuts);
         this.manifest = manifest;
         this.configuration = configuration;
+        configuration.AdaptiveBluetooth.Validate();
+        if (!configuration.AdaptiveBluetooth.Enabled)
+        {
+            this.desiredBluetoothConnectionMode = BluetoothConnectionMode.PowerSaving;
+        }
         this.transportFactory = transportFactory;
         this.reconnectDelayPolicy = reconnectDelayPolicy;
         this.diagnosticSink = diagnosticSink;
+        this.historyCollector = new ConnectionHistoryCollector(diagnosticSink, historyCheckpointPath);
         this.options = options ?? CompanionServiceOptions.Default;
         this.options.Validate();
         this.shortcutRouter = new ShortcutRouter(configuration.Shortcuts);
@@ -142,6 +151,7 @@ public sealed class CompanionService : ICompanionSession
                 return;
             }
 
+            this.historyCollector.Pause();
             this.events.Writer.TryWrite(StopRequestedEvent.Instance);
         }
 
@@ -176,6 +186,7 @@ public sealed class CompanionService : ICompanionSession
                 return ShortcutRouteKind.Ignored;
             }
 
+            this.historyCollector.Pause();
             this.events.Writer.TryWrite(new ShortcutActionEvent(this.generation, route, keyEvent.IsInjected));
             return route.Kind;
         }
@@ -208,6 +219,11 @@ public sealed class CompanionService : ICompanionSession
             throw new ArgumentOutOfRangeException(nameof(mode));
         }
 
+        if (!this.configuration.AdaptiveBluetooth.Enabled)
+        {
+            mode = BluetoothConnectionMode.PowerSaving;
+        }
+
         lock (this.bluetoothModeSync)
         {
             if (this.desiredBluetoothConnectionMode == mode)
@@ -238,6 +254,7 @@ public sealed class CompanionService : ICompanionSession
         }
 
         await this.StopAsync().ConfigureAwait(false);
+        await this.historyCollector.DisposeAsync().ConfigureAwait(false);
         lock (this.lifecycleSync)
         {
             this.disposed = true;
@@ -295,15 +312,17 @@ public sealed class CompanionService : ICompanionSession
                     }
 
                     lastFailure = result.Failure;
+                    Dictionary<string, string> failureProperties = new()
+                    {
+                        ["transport"] = kind.ToString(),
+                        ["phase"] = result.WasConnected ? "connected" : "discovery",
+                    };
+                    AddFailureProperties(failureProperties, result.Failure!);
                     await this.WriteDiagnosticAsync(
                         DiagnosticLevel.Warning,
                         "connection_failed",
                         $"The {kind} transport ended: {result.Failure!.Message}",
-                        new Dictionary<string, string>
-                        {
-                            ["transport"] = kind.ToString(),
-                            ["phase"] = result.WasConnected ? "connected" : "discovery",
-                        }).ConfigureAwait(false);
+                        failureProperties).ConfigureAwait(false);
                 }
 
                 if (restartImmediately)
@@ -360,7 +379,7 @@ public sealed class CompanionService : ICompanionSession
         CancellationTokenSource? renewalCancellation = null;
         Task? renewalTask = null;
         Task? healthCheckTask = null;
-        LayerCommandStateMachine commandMachine = new(this.manifest);
+        LayerCommandStateMachine commandMachine = new(this.manifest) { BluetoothParameters = this.configuration.AdaptiveBluetooth.ToParameters() };
         BatteryStateTracker batteryTracker = new(this.manifest);
         Dictionary<ShortcutBinding, uint> momentaryActivations = [];
         BluetoothConnectionMode? appliedBluetoothConnectionMode = null;
@@ -379,11 +398,21 @@ public sealed class CompanionService : ICompanionSession
                 connectionEvents.ConnectionLost += connectionLostHandler;
             }
 
+            long connectStarted = Stopwatch.GetTimestamp();
             using (CancellationTokenSource connectTimeout = new(this.options.ConnectTimeout))
             {
                 await transport.ConnectAsync(connectTimeout.Token).ConfigureAwait(false);
             }
 
+            await this.WriteDiagnosticAsync(
+                DiagnosticLevel.Information,
+                "transport_ready",
+                $"The {kind} transport is ready for the protocol handshake.",
+                new Dictionary<string, string>
+                {
+                    ["transport"] = kind.ToString(),
+                    ["elapsedMs"] = Stopwatch.GetElapsedTime(connectStarted).TotalMilliseconds.ToString("F1", CultureInfo.InvariantCulture),
+                }).ConfigureAwait(false);
             await this.OpenProtocolSessionAsync(transport, commandMachine, batteryTracker).ConfigureAwait(false);
             connected = true;
             if (kind == TransportKind.Bluetooth)
@@ -400,6 +429,7 @@ public sealed class CompanionService : ICompanionSession
             }
 
             this.ActivateShortcutGeneration(sessionGeneration);
+            this.historyCollector.RequestCollection(transport);
             this.UpdateConnectedStatus(kind, commandMachine, batteryTracker, $"Connected over {kind}");
             await this.WriteDiagnosticAsync(
                 DiagnosticLevel.Information,
@@ -444,6 +474,11 @@ public sealed class CompanionService : ICompanionSession
                     case SessionServiceEvent sessionEvent when sessionEvent.Generation != sessionGeneration:
                         continue;
                     case TransportLostEvent lost:
+                        await this.WriteDiagnosticAsync(
+                            DiagnosticLevel.Warning,
+                            "transport_connection_lost",
+                            $"The {kind} transport reported a connection loss.",
+                            new Dictionary<string, string> { ["transport"] = kind.ToString() }).ConfigureAwait(false);
                         throw new IOException($"The {kind} connection was lost.", lost.Cause);
                     case TransportPacketEvent packet:
                         ApplyTransportPacket(packet.Packet, commandMachine, batteryTracker);
@@ -490,6 +525,11 @@ public sealed class CompanionService : ICompanionSession
                 {
                     lastTransportActivity = Stopwatch.GetTimestamp();
                 }
+
+                if (serviceEvent is BluetoothHealthCheckEvent && momentaryActivations.Count == 0)
+                {
+                    this.historyCollector.RequestCollection(transport);
+                }
             }
         }
         catch (Exception exception)
@@ -499,6 +539,7 @@ public sealed class CompanionService : ICompanionSession
         finally
         {
             this.DeactivateShortcutGeneration(sessionGeneration);
+            await this.historyCollector.StopAsync().ConfigureAwait(false);
             renewalCancellation?.Cancel();
             if (renewalTask is not null)
             {
@@ -611,10 +652,7 @@ public sealed class CompanionService : ICompanionSession
     private async Task<TMessage> ExchangeForAsync<TMessage>(IKeyboardTransport transport, ProtocolMessage request)
         where TMessage : ProtocolMessage
     {
-        using CancellationTokenSource timeout = new(this.options.ExchangeTimeout);
-        ReadOnlyMemory<byte> responseBytes = await transport
-            .ExchangeAsync(ProtocolPacketCodec.Encode(request), timeout.Token)
-            .ConfigureAwait(false);
+        ReadOnlyMemory<byte> responseBytes = await this.ExchangeWithDiagnosticsAsync(transport, request, 1).ConfigureAwait(false);
         if (!ProtocolPacketCodec.TryDecode(responseBytes.Span, out ProtocolMessage? response) || response is not TMessage expected)
         {
             throw new InvalidDataException(
@@ -811,15 +849,11 @@ public sealed class CompanionService : ICompanionSession
         IKeyboardTransport transport,
         ProtocolMessage command)
     {
-        byte[] encodedCommand = ProtocolPacketCodec.Encode(command);
         for (int attempt = 0; ; attempt++)
         {
             try
             {
-                using CancellationTokenSource timeout = new(this.options.ExchangeTimeout);
-                ReadOnlyMemory<byte> responseBytes = await transport
-                    .ExchangeAsync(encodedCommand, timeout.Token)
-                    .ConfigureAwait(false);
+                ReadOnlyMemory<byte> responseBytes = await this.ExchangeWithDiagnosticsAsync(transport, command, attempt + 1).ConfigureAwait(false);
                 if (!ProtocolPacketCodec.TryDecode(responseBytes.Span, out ProtocolMessage? response) || response is null)
                 {
                     throw new InvalidDataException($"The {transport.Kind} response to {command.Type} was malformed.");
@@ -850,6 +884,71 @@ public sealed class CompanionService : ICompanionSession
                         ["transport"] = transport.Kind.ToString(),
                         ["attempt"] = (attempt + 2).ToString(System.Globalization.CultureInfo.InvariantCulture),
                     }).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task<ReadOnlyMemory<byte>> ExchangeWithDiagnosticsAsync(IKeyboardTransport transport, ProtocolMessage request, int attempt)
+    {
+        this.historyCollector.Pause();
+        byte[] packet = ProtocolPacketCodec.Encode(request);
+        Dictionary<string, string> properties = new()
+        {
+            ["transport"] = transport.Kind.ToString(),
+            ["requestType"] = request.Type.ToString(),
+            ["attempt"] = attempt.ToString(CultureInfo.InvariantCulture),
+            ["timeoutMs"] = this.options.ExchangeTimeout.TotalMilliseconds.ToString("F1", CultureInfo.InvariantCulture),
+        };
+        if (request is ProtocolMessage.HelloRequest hello)
+        {
+            properties["requestId"] = hello.ClientNonce.ToString(CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            // Every session-bound request starts with its session and request/command identifiers.
+            properties["sessionId"] = BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(4)).ToString(CultureInfo.InvariantCulture);
+            properties["requestId"] = BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(8)).ToString(CultureInfo.InvariantCulture);
+        }
+
+        long started = Stopwatch.GetTimestamp();
+        ReadOnlyMemory<byte> response;
+        try
+        {
+            using CancellationTokenSource timeout = new(this.options.ExchangeTimeout);
+            response = await transport.ExchangeAsync(packet, timeout.Token).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            properties["elapsedMs"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds.ToString("F1", CultureInfo.InvariantCulture);
+            AddFailureProperties(properties, exception);
+            await this.WriteDiagnosticAsync(
+                DiagnosticLevel.Warning, "exchange_failed", $"The {request.Type} exchange failed.", properties).ConfigureAwait(false);
+            throw;
+        }
+
+        properties["elapsedMs"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds.ToString("F1", CultureInfo.InvariantCulture);
+        properties["responseType"] = ProtocolPacketCodec.TryReadHeader(response.Span, out _, out ProtocolMessageType responseType)
+            ? responseType.ToString()
+            : "invalid_header";
+        await this.WriteDiagnosticAsync(
+            DiagnosticLevel.Information, "exchange_received", $"Received a response to {request.Type}.", properties).ConfigureAwait(false);
+        return response;
+    }
+
+    private static void AddFailureProperties(Dictionary<string, string> properties, Exception exception)
+    {
+        properties["exceptionType"] = exception.GetType().Name;
+        properties["hresult"] = $"0x{exception.HResult:X8}";
+        properties["failureKind"] = exception is OperationCanceledException or TimeoutException ? "timeout_or_cancelled" : "error";
+        Exception cause = exception.GetBaseException();
+        properties["causeType"] = cause.GetType().Name;
+        properties["causeHresult"] = $"0x{cause.HResult:X8}";
+        // Copy only our known transport metadata; arbitrary exception data can contain private device information.
+        foreach (string key in new[] { "operation", "gattStatus", "attError", "transportElapsedMs", "connectionStatus" })
+        {
+            if ((exception.Data[key] ?? cause.Data[key]) is string value)
+            {
+                properties[key] = value;
             }
         }
     }

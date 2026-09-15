@@ -1,0 +1,13 @@
+{
+  "currentFirmware": "Output/ShinyGo60.uf2",
+  "currentSha256": "1ff163d457c8d45d6a5954e953ae343c691de88c952ca0742014b8f7d5f98a77",
+  "retainedBuildCount": 5,
+  "archiveCount": 4,
+  "build": "Passed: zero warnings/errors",
+  "tests": "18/18 groups passed, including seven-build retention, original timestamps, publication rollback and read-only cleanup",
+  "builderPublish": "Passed",
+  "existingOutputMigration": "Complete",
+  "firmwareRebuild": "Blocked: Docker image shinygo60-builder:v25.11 is not installed; previous UF2 preserved",
+  "riderInspection": "Unavailable: Go60 is not open in Rider",
+  "otherRecords": "Build Records/Previous Output"
+}

@@ -3,6 +3,7 @@ if(CONFIG_SHINYGO60)
   zephyr_library_include_directories(include)
   zephyr_library_include_directories(${APPLICATION_SOURCE_DIR}/include)
   zephyr_library_sources_ifdef(CONFIG_SHINYGO60_BATTERY_TELEMETRY src/battery_heartbeat.c)
+  zephyr_library_sources_ifdef(CONFIG_SHINYGO60_CONNECTION_DIAGNOSTICS src/connection_diagnostics.c)
 
   if(CONFIG_SHINYGO60_CENTRAL)
     zephyr_library_sources(src/shinygo60.c)

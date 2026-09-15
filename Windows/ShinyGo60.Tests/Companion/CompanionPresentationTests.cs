@@ -91,7 +91,7 @@ internal static class CompanionPresentationTests
         TaskbarWidgetPlacement placement = TaskbarWidgetPlacementCalculator.Calculate(geometry);
 
         AssertEx.Equal(true, placement.IsVisible);
-        AssertEx.Equal(new PixelRectangle(5, 5, 257, 43), placement.Bounds);
+        AssertEx.Equal(new PixelRectangle(5, 5, 194, 43), placement.Bounds);
     }
 
     private static void VerifyScaledSecondaryMonitorPlacement()
@@ -104,7 +104,7 @@ internal static class CompanionPresentationTests
         TaskbarWidgetPlacement placement = TaskbarWidgetPlacementCalculator.Calculate(geometry);
 
         AssertEx.Equal(true, placement.IsVisible);
-        AssertEx.Equal(new PixelRectangle(8, 8, 386, 64), placement.Bounds);
+        AssertEx.Equal(new PixelRectangle(8, 8, 292, 64), placement.Bounds);
     }
 
     private static void VerifyVerticalTaskbarPlacement()

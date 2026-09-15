@@ -1,0 +1,9 @@
+{
+  "StartedUtc": "2026-09-11T06:29:09.7292137+00:00",
+  "RecoveredUtc": "2026-09-11T06:30:43.0597606+00:00",
+  "FirstDisconnectCode": 40,
+  "FailedReconnects": 31,
+  "SecurityFailures": 31,
+  "WindowsDriverErrors": 6,
+  "DisplayText": "11/09/2026 3:29 PM — Bluetooth timing failure (Instant Passed, 0x28)\nCompanion connection restored after 93 seconds.\nFailed reconnects: 31. Security failures: 31. Windows also recorded 6 Bluetooth driver error(s).\nReported evidence does not identify which device or driver caused the failure."
+}

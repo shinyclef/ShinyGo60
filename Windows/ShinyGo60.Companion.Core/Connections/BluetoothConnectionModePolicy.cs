@@ -1,4 +1,5 @@
 using ShinyGo60.Protocol.Messages;
+using ShinyGo60.Companion.Core.Configuration;
 
 namespace ShinyGo60.Companion.Core.Connections;
 
@@ -17,6 +18,18 @@ public sealed class BluetoothConnectionModePolicy
     }
 
     public TimeSpan IdleThreshold { get; }
+    public bool Enabled { get; init; } = true;
+    public bool UseIdleWhenLocked { get; init; } = true;
+
+    public static BluetoothConnectionModePolicy FromSettings(AdaptiveBluetoothSettings settings)
+    {
+        settings.Validate();
+        return new BluetoothConnectionModePolicy(TimeSpan.FromSeconds(settings.IdleAfterSeconds))
+        {
+            Enabled = settings.Enabled,
+            UseIdleWhenLocked = settings.UseIdleWhenLocked,
+        };
+    }
 
     public BluetoothConnectionMode GetMode(bool sessionLocked, TimeSpan idleDuration)
     {
@@ -25,7 +38,7 @@ public sealed class BluetoothConnectionModePolicy
             throw new ArgumentOutOfRangeException(nameof(idleDuration), "The idle duration cannot be negative.");
         }
 
-        return sessionLocked || idleDuration >= this.IdleThreshold
+        return !this.Enabled || (sessionLocked && this.UseIdleWhenLocked) || idleDuration >= this.IdleThreshold
             ? BluetoothConnectionMode.PowerSaving
             : BluetoothConnectionMode.Interactive;
     }

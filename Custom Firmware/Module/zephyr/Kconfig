@@ -12,6 +12,16 @@ config SHINYGO60_CENTRAL
       right/peripheral image shares the configuration but compiles no runtime
       source from this module.
 
+config SHINYGO60_CONNECTION_DIAGNOSTICS
+    bool "ShinyGo60 connection diagnostics"
+    depends on SHINYGO60 && BT
+    select HWINFO
+    default y
+    help
+      Keep separate failure and routine event histories in RAM without
+      addresses, key data, flash writes, or periodic logging work. The companion
+      reads the left half's history over encrypted GATT in production builds.
+
 config SHINYGO60_PROTOCOL
     bool
     default y if SHINYGO60_CENTRAL

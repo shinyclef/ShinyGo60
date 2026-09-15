@@ -1,0 +1,29 @@
+{
+  "BundleVersion": 1,
+  "ExportedUtc": "2026-09-11T06:30:59.3697251+00:00",
+  "EventsSinceUtc": "2026-09-04T06:30:59.3697251+00:00",
+  "EventCount": 20817,
+  "Environment": {
+    "CompanionVersion": "1.2.0\u002B37c8fcbcb51f3742442623573f8d16c7b5e216cf",
+    "OperatingSystem": "Microsoft Windows 10.0.26200",
+    "RuntimeVersion": ".NET 10.0.7",
+    "ProtocolVersion": "1.3",
+    "LayoutIdentifier": "sg60-v1-7ff7cd1ecc2c5a4cdd98a8a4373f4976",
+    "AdapterCollectionStatus": "Collected",
+    "BluetoothAdapters": [
+      {
+        "Name": "Realtek Bluetooth LEAI Driver",
+        "Manufacturer": "Realtek Semiconductor Corp.",
+        "DriverProvider": "Realtek Semiconductor Corp.",
+        "DriverVersion": "18.4032.2510.901",
+        "DriverDate": "2025-10-15T09:00:00.0000000\u002B09:00"
+      }
+    ]
+  },
+  "ObservedFirmwareVersions": [
+    "0.10.0",
+    "0.10.1",
+    "0.9.0"
+  ],
+  "Notes": []
+}

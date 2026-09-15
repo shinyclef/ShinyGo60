@@ -26,7 +26,9 @@ internal static class LayerCommandStateMachineTests
 
     private static void VerifyAdaptiveBluetoothModeCommands()
     {
-        LayerCommandStateMachine machine = CreateReadyMachine(FirstSession, revision: 4, persistentLayer: 2);
+        LayerCommandStateMachine machine = new(CreateManifest()) { BluetoothParameters = new(1, 50, 45) };
+        machine.BeginSession(SuccessfulHello(FirstSession));
+        ApplySnapshot(machine, FirstSession, revision: 4, persistentLayer: 2);
 
         uint interactiveCommandId = machine.QueueBluetoothConnectionMode(BluetoothConnectionMode.Interactive);
         AssertEx.Equal(interactiveCommandId, machine.QueueBluetoothConnectionMode(BluetoothConnectionMode.Interactive));
@@ -37,6 +39,7 @@ internal static class LayerCommandStateMachineTests
         AssertEx.Equal(FirstSession, interactive.SessionId);
         AssertEx.Equal(interactiveCommandId, interactive.CommandId);
         AssertEx.Equal(BluetoothConnectionMode.Interactive, interactive.Mode);
+        AssertEx.Equal(new BluetoothLatencyParameters(1, 50, 45), interactive.Parameters);
         AssertEx.Equal(
             LayerCommandResponseResult.CommandAccepted,
             machine.ApplyResponse(new ProtocolMessage.CommandResult(
@@ -50,6 +53,7 @@ internal static class LayerCommandStateMachineTests
             (ProtocolMessage.SetBluetoothConnectionModeCommand)machine.TryStartNextCommand()!;
         AssertEx.Equal(powerSavingCommandId, powerSaving.CommandId);
         AssertEx.Equal(BluetoothConnectionMode.PowerSaving, powerSaving.Mode);
+        AssertEx.Equal(interactive.Parameters, powerSaving.Parameters);
         AssertEx.Throws<ArgumentOutOfRangeException>(
             () => machine.QueueBluetoothConnectionMode((BluetoothConnectionMode)2));
     }

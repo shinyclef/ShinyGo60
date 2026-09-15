@@ -9,6 +9,25 @@ public static class BuilderInstallationLocator
         DirectoryInfo? directory = new(Path.GetFullPath(startDirectory));
         while (directory is not null)
         {
+            string sourceFile = Path.Combine(directory.FullName, "firmware-source.txt");
+            if (File.Exists(sourceFile))
+            {
+                string sourceRoot = File.ReadAllText(sourceFile).Trim();
+                if (!Path.IsPathFullyQualified(sourceRoot))
+                {
+                    throw new InvalidDataException("firmware-source.txt must contain the full path to the Go60 workspace.");
+                }
+
+                sourceRoot = Path.GetFullPath(sourceRoot);
+                if (!HasRequiredBuildFiles(sourceRoot))
+                {
+                    throw new DirectoryNotFoundException(
+                        $"The configured Go60 firmware workspace is unavailable: {sourceRoot}. Restore it or update firmware-source.txt.");
+                }
+
+                return sourceRoot;
+            }
+
             if (HasRequiredBuildFiles(directory.FullName))
             {
                 return directory.FullName;

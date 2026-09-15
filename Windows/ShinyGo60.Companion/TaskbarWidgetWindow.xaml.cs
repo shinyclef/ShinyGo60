@@ -29,9 +29,10 @@ public partial class TaskbarWidgetWindow : Window
     {
         ArgumentNullException.ThrowIfNull(state);
         this.LayerValue.Text = state.LayerName;
+        string transportLabel = state.TransportLabel == "Bluetooth" ? "BT" : state.TransportLabel.ToUpperInvariant();
         this.ConnectionValue.Text = string.IsNullOrEmpty(state.TransportLabel)
             ? state.ConnectionLabel
-            : $"{state.ConnectionLabel} · {state.TransportLabel.ToUpperInvariant()}";
+            : $"{state.ConnectionLabel} · {transportLabel}";
         SetBatteryDisplay(
             this.LeftBatteryValue,
             this.LeftBatteryPercent,

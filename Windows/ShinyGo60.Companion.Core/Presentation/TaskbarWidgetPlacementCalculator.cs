@@ -3,7 +3,7 @@ namespace ShinyGo60.Companion.Core.Presentation;
 public static class TaskbarWidgetPlacementCalculator
 {
     private const int DefaultDpi = 96;
-    private const int HorizontalWidthDip = 252;
+    private const int HorizontalWidthDip = 189;
     private const int VerticalHeightDip = 116;
     private const int MarginDip = 5;
 

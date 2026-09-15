@@ -63,7 +63,10 @@ public abstract record ProtocolMessage(ProtocolMessageType Type)
         uint SessionId,
         uint CommandId,
         BluetoothConnectionMode Mode)
-        : ProtocolMessage(ProtocolMessageType.SetBluetoothConnectionMode);
+        : ProtocolMessage(ProtocolMessageType.SetBluetoothConnectionMode)
+    {
+        public BluetoothLatencyParameters Parameters { get; init; } = BluetoothLatencyParameters.Default;
+    }
 
     public sealed record CommandResult(
         uint SessionId,

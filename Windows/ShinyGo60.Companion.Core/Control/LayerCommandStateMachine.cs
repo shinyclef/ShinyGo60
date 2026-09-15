@@ -219,6 +219,8 @@ public sealed class LayerCommandStateMachine
         }
     }
 
+    public BluetoothLatencyParameters BluetoothParameters { get; init; } = BluetoothLatencyParameters.Default;
+
     public ProtocolMessage? TryStartNextCommand()
     {
         lock (this.syncRoot)
@@ -246,7 +248,7 @@ public sealed class LayerCommandStateMachine
                 CommandKind.ReleaseMomentary => new ProtocolMessage.ReleaseMomentaryLayerCommand(
                     this.sessionId, command.CommandId, command.ActivationId),
                 CommandKind.SetBluetoothConnectionMode => new ProtocolMessage.SetBluetoothConnectionModeCommand(
-                    this.sessionId, command.CommandId, command.ConnectionMode),
+                    this.sessionId, command.CommandId, command.ConnectionMode) { Parameters = this.BluetoothParameters },
                 _ => throw new InvalidOperationException($"Unsupported queued command {command.Kind}."),
             };
             this.pendingCommand = new PendingCommandState(command, message);

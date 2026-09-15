@@ -113,8 +113,14 @@ internal static class ProtocolCodecTests
         AssertRejected(invalidBluetoothMode, "An unknown Bluetooth connection mode should be rejected.");
 
         byte[] nonZeroBluetoothReserved = ReadVector("set-bluetooth-connection-mode.bytes");
-        nonZeroBluetoothReserved[13] = 1;
+        nonZeroBluetoothReserved[19] = 1;
         AssertRejected(nonZeroBluetoothReserved, "A nonzero Bluetooth mode reserved field should be rejected.");
+        byte[] invalidLatency = ReadVector("set-bluetooth-connection-mode.bytes");
+        invalidLatency[15] = 100;
+        AssertRejected(invalidLatency, "Latency above the supported limit must be rejected.");
+        invalidLatency = ReadVector("set-bluetooth-connection-mode.bytes");
+        invalidLatency[17] = 0;
+        AssertRejected(invalidLatency, "An unsafe minimum switch interval must be rejected.");
 
         byte[] inconsistentState = ReadVector("state-snapshot.bytes");
         inconsistentState[19] = (byte)LayerStateIndicators.PersistentLayerActive;
@@ -139,6 +145,13 @@ internal static class ProtocolCodecTests
 
     private static void VerifyEncodeBounds()
     {
+        ProtocolMessage.SetBluetoothConnectionModeCommand custom = new(1, 2, BluetoothConnectionMode.PowerSaving)
+        {
+            Parameters = new BluetoothLatencyParameters(0, 99, 300),
+        };
+        AssertEx.True(ProtocolPacketCodec.TryDecode(ProtocolPacketCodec.Encode(custom), out ProtocolMessage? decoded), "Custom latency must decode.");
+        AssertEx.Equal(custom, decoded);
+        AssertEx.Throws<ArgumentException>(() => ProtocolPacketCodec.Encode(custom with { Parameters = new(31, 30, 30) }));
         AssertEx.Throws<ArgumentOutOfRangeException>(
             () => ProtocolPacketCodec.Encode(new ProtocolMessage.HelloRequest(1, (ProtocolCapability)0x80, Layout)));
         AssertEx.Throws<ArgumentOutOfRangeException>(

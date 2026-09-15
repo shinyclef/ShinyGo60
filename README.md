@@ -104,8 +104,10 @@ Create the self-contained graphical builder package:
 & '.\Windows\Publish-Builder.ps1'
 ```
 
-Put exactly one exported Go60 `.keymap` in `artifacts\ShinyGo60 Builder\Input`, then double-click
-`artifacts\ShinyGo60 Builder\ShinyGo60.Builder.exe`. A keymap can instead be dropped onto the executable or selected in its window. The builder checks Docker,
+Put exactly one exported Go60 `.keymap` in the workspace's `Input` folder, then double-click `ShinyGo60 Builder.lnk`.
+The published builder's `firmware-source.txt` points to this workspace, so every build uses the current maintained firmware and publishes into `Output`.
+A missing source produces an error instead of a build with stale bundled firmware. A keymap can also be dropped onto the executable or selected in its window.
+The builder checks Docker,
 the pinned image, and working space; shows concise progress; and opens the matched result on success.
 
 The command-line development path remains available:
@@ -228,6 +230,7 @@ Generated firmware workspaces, build output, binaries, and local settings are ig
 - [Windows UI and taskbar widget](Custom%20Firmware/BuildSupport/STEP14_WINDOWS_EXPERIENCE.md)
 - [Adaptive Bluetooth latency](Custom%20Firmware/BuildSupport/ADAPTIVE_BLUETOOTH_LATENCY.md)
 - [One-click firmware builder](Custom%20Firmware/BuildSupport/STEP15_ONE_CLICK_BUILDER.md)
+- [System hardening](Custom%20Firmware/BuildSupport/STEP16_HARDENING.md)
 
 ## Contributing
 

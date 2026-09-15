@@ -94,6 +94,8 @@ public static class CompanionConfigurationJson
         }
 
         WidgetTaskbarSelection widgetTaskbar = ResolveWidgetTaskbar(configuration.WidgetTaskbar);
+        AdaptiveBluetoothSettings adaptiveBluetooth = configuration.AdaptiveBluetooth ?? new();
+        adaptiveBluetooth.Validate();
 
         if (configuration.Shortcuts is null || configuration.Shortcuts.Count == 0)
         {
@@ -156,6 +158,7 @@ public static class CompanionConfigurationJson
         return new ResolvedCompanionConfiguration(configuration.TransportPreference, bindings)
         {
             WidgetTaskbar = widgetTaskbar,
+            AdaptiveBluetooth = adaptiveBluetooth,
         };
     }
 

@@ -43,6 +43,7 @@ internal static class KeymapInspectionTests
     {
         await VerifyCurrentKeymapAsync();
         await VerifyLayerReorderingAsync();
+        VerifyBindingChangesPreserveIdentity();
         await VerifyFormattingVariationAsync();
         VerifyMalformedExportFailure();
         VerifyAmbiguousLayerFailure();
@@ -128,10 +129,28 @@ internal static class KeymapInspectionTests
             !string.Equals(firstIdentifier, reorderedIdentifier, StringComparison.Ordinal),
             "Reordering layers should change the layout identifier.");
 
-        string nextProtocolIdentifier = LayoutIdentity.Create(new ProtocolVersion(1, 3), first.SourceBytes.Span);
+        var nextProtocol = new ProtocolVersion(ProtocolVersion.Major, checked((ushort)(ProtocolVersion.Minor + 1)));
+        string nextProtocolIdentifier = LayoutIdentity.Create(nextProtocol, first.SourceBytes.Span);
         AssertEx.True(
             !string.Equals(firstIdentifier, nextProtocolIdentifier, StringComparison.Ordinal),
             "Changing the protocol version should change the layout identifier.");
+    }
+
+    private static void VerifyBindingChangesPreserveIdentity()
+    {
+        string path = FixturePath("LayerOrderA.keymap");
+        byte[] original = File.ReadAllBytes(path);
+        string text = Encoding.UTF8.GetString(original);
+        byte[] changed = Encoding.UTF8.GetBytes(text.Replace("&none", "&kp A", StringComparison.Ordinal) + "\n/* export comment */\n");
+        AssertEx.Equal(LayoutIdentity.Create(ProtocolVersion, original), LayoutIdentity.Create(ProtocolVersion, changed));
+        AssertEx.True(
+            Go60KeymapInspector.Inspect(path, original).KeymapSha256 != Go60KeymapInspector.Inspect(path, changed).KeymapSha256,
+            "Binding changes must still change the exact source hash used to verify firmware builds.");
+
+        byte[] renamed = Encoding.UTF8.GetBytes(text.Replace("Navigation", "Symbols", StringComparison.Ordinal));
+        AssertEx.True(
+            LayoutIdentity.Create(ProtocolVersion, original) != LayoutIdentity.Create(ProtocolVersion, renamed),
+            "Renaming a layer must invalidate the companion's layer contract.");
     }
 
     private static async ValueTask VerifyFormattingVariationAsync()

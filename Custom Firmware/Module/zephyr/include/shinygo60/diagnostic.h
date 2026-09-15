@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define SHINYGO60_FEATURE_VERSION "0.8.1-adaptive-ble"
+#define SHINYGO60_FEATURE_VERSION "0.10.1"
 
 struct shinygo60_diagnostic {
     const char *feature_version;

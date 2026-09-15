@@ -1,6 +1,9 @@
 using System.IO;
 using System.Reflection;
+using System.Text.Json;
 using System.Windows;
+using System.Windows.Threading;
+using ShinyGo60.Companion.Core.Diagnostics;
 using ShinyGo60.Companion.Core.Configuration;
 using ShinyGo60.Companion.Core.Connections;
 using ShinyGo60.Companion.Core.Presentation;
@@ -9,8 +12,10 @@ using ShinyGo60.Companion.Core.Sessions;
 using ShinyGo60.Companion.Core.Shortcuts;
 using ShinyGo60.Diagnostics;
 using ShinyGo60.Platform.Windows.Input;
+using ShinyGo60.Platform.Windows.Diagnostics;
 using ShinyGo60.Platform.Windows.Shell;
 using ShinyGo60.Platform.Windows.Transports;
+using ShinyGo60.Protocol;
 using ShinyGo60.Protocol.Manifests;
 using ShinyGo60.Protocol.Messages;
 
@@ -31,34 +36,82 @@ public partial class App : Application, IDisposable
     private WindowsUserActivityMonitor? userActivityMonitor;
     private bool showSettingsWhenReady;
     private bool disposed;
+    private string diagnosticPath = string.Empty;
+    private readonly CancellationTokenSource issueCancellation = new();
+    private Task issueRefresh = Task.CompletedTask;
+    private DispatcherTimer? issueTimer;
+    private CompanionConnectionState? lastIssueConnectionState;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         try
         {
-            this.applicationOptions = CompanionApplicationOptions.Parse(e.Args);
-            this.instanceCoordinator = new CompanionInstanceCoordinator();
-            if (!this.instanceCoordinator.IsPrimary)
+            bool verifyPackage = e.Args.Length == 1 && e.Args[0] == "--verify-package";
+            this.applicationOptions = CompanionApplicationOptions.Parse(verifyPackage ? [] : e.Args);
+            this.manifest = await LayoutManifestJson.ReadAsync(this.applicationOptions.ManifestPath);
+            if (this.manifest.ProtocolVersion != ProtocolVersion.Current)
             {
-                if (!this.applicationOptions.StartInBackground)
-                {
-                    this.instanceCoordinator.SignalShowSettings();
-                }
-
+                throw new InvalidDataException(
+                    $"Manifest protocol {this.manifest.ProtocolVersion} is unsupported; expected {ProtocolVersion.Current}.");
+            }
+            ResolvedCompanionConfiguration configuration = await CompanionConfigurationJson.ReadAndResolveAsync(
+                this.applicationOptions.ConfigurationPath, this.manifest);
+            if (verifyPackage)
+            {
                 this.Shutdown();
                 return;
             }
+            this.instanceCoordinator = new CompanionInstanceCoordinator();
+            if (!this.instanceCoordinator.IsPrimary)
+            {
+                Version currentVersion = typeof(App).Assembly.GetName().Version!;
+                (Version Version, Guid Build)? active = CompanionInstanceCoordinator.ReadActiveBuild();
+                if (active.HasValue && active.Value.Version < currentVersion)
+                {
+                    this.instanceCoordinator.RequestExitForUpdate();
+                    for (int attempt = 0; attempt < 100 && !this.instanceCoordinator.TryBecomePrimary(); attempt++)
+                    {
+                        await Task.Delay(100);
+                    }
+                    this.instanceCoordinator.TryBecomePrimary();
+                }
+
+                if (!this.instanceCoordinator.IsPrimary)
+                {
+                    bool sameBuild = active.HasValue && active.Value.Version == currentVersion &&
+                        active.Value.Build == typeof(App).Assembly.ManifestModule.ModuleVersionId;
+                    this.instanceCoordinator.SignalShowSettings();
+                    if (!sameBuild)
+                    {
+                        string running = active.HasValue ? $"Companion {active.Value.Version}" : "An older or unidentified companion";
+                        MessageBox.Show($"{running} is still running. Version {currentVersion} has not started. " +
+                            "Exit the running companion, then launch this version again.", "Companion version conflict",
+                            MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+
+                    this.Shutdown(sameBuild ? 0 : 2);
+                    return;
+                }
+            }
 
             this.instanceCoordinator.ShowSettingsRequested += this.OnShowSettingsRequested;
-            this.manifest = await LayoutManifestJson.ReadAsync(this.applicationOptions.ManifestPath);
-            ResolvedCompanionConfiguration configuration = await CompanionConfigurationJson.ReadAndResolveAsync(
-                this.applicationOptions.ConfigurationPath,
-                this.manifest);
-            string diagnosticPath = this.OpenDiagnosticLog();
+            this.instanceCoordinator.ExitForUpdateRequested += this.OnExitForUpdateRequested;
+            this.diagnosticPath = this.OpenDiagnosticLog();
+            await this.diagnosticSink!.WriteAsync(new DiagnosticEvent(DateTimeOffset.UtcNow, DiagnosticLevel.Information,
+                "companion.app", "application_started", "Started the companion.", new Dictionary<string, string>
+                {
+                    ["version"] = typeof(App).Assembly.GetName().Version!.ToString(),
+                    ["buildId"] = typeof(App).Assembly.ManifestModule.ModuleVersionId.ToString(),
+                }));
+            if (StartupRegistration.IsEnabled())
+            {
+                StartupRegistration.SetEnabled(true, GetApplicationExecutablePath(),
+                    this.applicationOptions.ManifestPath, this.applicationOptions.ConfigurationPath);
+            }
             this.taskbarProvider = new TaskbarGeometryProvider();
             this.userActivityMonitor = new WindowsUserActivityMonitor(
-                new BluetoothConnectionModePolicy(BluetoothConnectionModePolicy.DefaultIdleThreshold));
+                BluetoothConnectionModePolicy.FromSettings(configuration.AdaptiveBluetooth));
             this.userActivityMonitor.ModeChanged += this.OnBluetoothConnectionModeChanged;
             this.userActivityMonitor.Start();
 
@@ -67,7 +120,7 @@ public partial class App : Application, IDisposable
                 configuration,
                 this.GetWidgetTaskbarOptions(),
                 StartupRegistration.IsEnabled(),
-                diagnosticPath);
+                this.diagnosticPath);
             this.settingsWindow.ReconnectRequested += this.OnReconnectRequested;
             this.settingsWindow.SettingsSaveRequested += this.OnSettingsSaveRequested;
             this.settingsWindow.ExitRequested += this.OnExitRequested;
@@ -86,9 +139,19 @@ public partial class App : Application, IDisposable
             }
 
             await this.StartRuntimeAsync(configuration);
+            this.issueTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+            this.issueTimer.Tick += this.OnIssueTimerTick;
+            this.issueTimer.Start();
+            this.RequestIssueRefresh();
         }
         catch (Exception exception)
         {
+            if (e.Args.Length == 1 && e.Args[0] == "--verify-package")
+            {
+                File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "package-verification-error.txt"), exception.ToString());
+                this.Shutdown(1);
+                return;
+            }
             MessageBox.Show(
                 exception.Message,
                 "ShinyGo60 Companion could not start",
@@ -111,6 +174,10 @@ public partial class App : Application, IDisposable
             return;
         }
 
+        this.issueTimer?.Stop();
+        this.issueCancellation.Cancel();
+        this.issueRefresh.GetAwaiter().GetResult();
+        this.issueCancellation.Dispose();
         this.StopRuntimeAsync().AsTask().GetAwaiter().GetResult();
 
         if (this.userActivityMonitor is not null)
@@ -143,6 +210,7 @@ public partial class App : Application, IDisposable
         if (this.instanceCoordinator is not null)
         {
             this.instanceCoordinator.ShowSettingsRequested -= this.OnShowSettingsRequested;
+            this.instanceCoordinator.ExitForUpdateRequested -= this.OnExitForUpdateRequested;
             this.instanceCoordinator.Dispose();
             this.instanceCoordinator = null;
         }
@@ -167,10 +235,24 @@ public partial class App : Application, IDisposable
             configuration,
             new WindowsKeyboardTransportFactory(),
             ExponentialReconnectDelayPolicy.Default,
-            this.diagnosticSink);
+            this.diagnosticSink,
+            historyCheckpointPath: Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ShinyGo60", "connection-history-position.json"));
         this.companionService.StatusChanged += this.OnCompanionStatusChanged;
         this.companionService.SetBluetoothConnectionMode(
             this.userActivityMonitor?.CurrentMode ?? BluetoothConnectionMode.Interactive);
+
+        AdaptiveBluetoothSettings latency = configuration.AdaptiveBluetooth;
+        await this.diagnosticSink.WriteAsync(new DiagnosticEvent(DateTimeOffset.UtcNow, DiagnosticLevel.Information,
+            "companion.bluetooth", "latency_settings", "Applied Bluetooth latency settings.", new Dictionary<string, string>
+            {
+                ["enabled"] = latency.Enabled.ToString(),
+                ["activeLatency"] = latency.ActiveLatency.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["idleLatency"] = latency.IdleLatency.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["idleAfterSeconds"] = latency.IdleAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["minimumSwitchSeconds"] = latency.MinimumSwitchSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["useIdleWhenLocked"] = latency.UseIdleWhenLocked.ToString(),
+            }));
 
         this.shortcutSource = new GlobalKeyboardShortcutSource(configuration.Shortcuts.Select(binding => binding.Gesture));
         this.shortcutSource.KeyChanged += this.OnShortcutKeyChanged;
@@ -220,6 +302,59 @@ public partial class App : Application, IDisposable
         {
             this.settingsWindow?.UpdateStatus(e.Status);
             this.widgetController?.UpdateDisplayState(CompanionStatusPresenter.Present(e.Status));
+            if (this.lastIssueConnectionState != e.Status.ConnectionState)
+            {
+                this.lastIssueConnectionState = e.Status.ConnectionState;
+                this.RequestIssueRefresh();
+            }
+        });
+    }
+
+    private void OnIssueTimerTick(object? sender, EventArgs e) => this.RequestIssueRefresh();
+
+    private void RequestIssueRefresh()
+    {
+        if (!this.issueRefresh.IsCompleted || this.issueCancellation.IsCancellationRequested)
+        {
+            return;
+        }
+
+        this.issueRefresh = Task.Run(async () =>
+        {
+            CancellationToken token = this.issueCancellation.Token;
+            try
+            {
+                string directory = Path.GetDirectoryName(this.diagnosticPath)!;
+                IReadOnlyList<DiagnosticEvent> events = await ConnectionIssueLogReader.ReadAsync(directory, this.diagnosticPath, token).ConfigureAwait(false);
+                IReadOnlyList<BluetoothSystemEvent> windows = [];
+                string status = "Uses the last seven days of local logs and up to 512 recent Windows Bluetooth events.";
+                try
+                {
+                    using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    timeout.CancelAfter(TimeSpan.FromSeconds(10));
+                    windows = await BluetoothSystemHistory.ReadAsync(timeout.Token).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (!token.IsCancellationRequested &&
+                    exception is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or
+                        OperationCanceledException or System.Xml.XmlException)
+                {
+                    status = "Firmware/companion history loaded. Windows Bluetooth events unavailable: " + exception.GetType().Name + ".";
+                }
+
+                ConnectionIssueReport report = new(DateTimeOffset.UtcNow, ConnectionIssueAnalyzer.Analyze(events, windows), status, windows);
+                string path = Path.Combine(directory, "connection-issues.json");
+                await File.WriteAllTextAsync(path + ".tmp", JsonSerializer.Serialize(report), token).ConfigureAwait(false);
+                File.Move(path + ".tmp", path, overwrite: true);
+                _ = this.Dispatcher.BeginInvoke(() => this.settingsWindow?.UpdateConnectionIssues(report));
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                // Application shutdown cancels this optional background read.
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                _ = this.Dispatcher.BeginInvoke(() => this.settingsWindow?.ShowIssueHistoryError("Issue history unavailable: " + exception.Message));
+            }
         });
     }
 
@@ -277,6 +412,7 @@ public partial class App : Application, IDisposable
             this.widgetController?.SetSelection(configuration.WidgetTaskbar);
 
             await this.StopRuntimeAsync();
+            this.userActivityMonitor!.UpdatePolicy(BluetoothConnectionModePolicy.FromSettings(configuration.AdaptiveBluetooth));
             await this.StartRuntimeAsync(configuration);
             this.settingsWindow?.ApplySavedConfiguration(configuration, e.StartWithWindows);
             this.settingsWindow?.ShowSaveResult("Settings saved and applied.", succeeded: true);
@@ -299,6 +435,11 @@ public partial class App : Application, IDisposable
         _ = sender;
         _ = e;
         this.Dispatcher.BeginInvoke(this.ShowSettingsWindow);
+    }
+
+    private void OnExitForUpdateRequested(object? sender, EventArgs e)
+    {
+        this.Dispatcher.BeginInvoke(() => this.OnExitRequested(this, EventArgs.Empty));
     }
 
     private void ShowSettingsWindow()

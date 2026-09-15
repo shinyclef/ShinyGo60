@@ -27,8 +27,74 @@ internal static class CompanionServiceTests
         await VerifyStopSurvivesSilentTransportLossAsync();
         await VerifyStartupBeforeKeyboardAsync();
         await VerifyAdaptiveBluetoothModesAsync();
+        await VerifyConnectionDiagnosticsAsync();
+        await VerifyHistoryDoesNotBlockControlAsync();
         VerifyBluetoothConnectionModePolicy();
         VerifyReconnectBackoff();
+    }
+
+    internal static async ValueTask RunStressAsync()
+    {
+        const int cycleCount = 100;
+        LayoutManifest manifest = CreateManifest();
+        for (int cycle = 0; cycle < cycleCount; cycle++)
+        {
+            TransportKind transportKind = cycle % 2 == 0 ? TransportKind.Usb : TransportKind.Bluetooth;
+            TransportPreference preference = transportKind == TransportKind.Usb
+                ? TransportPreference.Usb
+                : TransportPreference.Bluetooth;
+            FakeTransportFactory factory = new(manifest, (kind, _) => new FakeProtocolKeyboardTransport(kind));
+            await using CompanionService service = CreateService(manifest, preference, factory);
+
+            await service.StartAsync();
+            await WaitUntilAsync(
+                () => factory.Created.Count == 1 && service.State == CompanionConnectionState.Connected,
+                $"Stress cycle {cycle} did not connect over {transportKind}.");
+            AssertEx.Equal(ShortcutRouteKind.Pressed, service.SubmitShortcutEvent(F23(ShortcutKeyState.Down, isInjected: true)));
+            await WaitUntilAsync(
+                () => factory.Created[0].Count<ProtocolMessage.PressMomentaryLayerCommand>() == 1,
+                $"Stress cycle {cycle} did not send its initial press.");
+
+            if (cycle % 3 == 0)
+            {
+                await service.StopAsync();
+                AssertEx.Equal(CompanionConnectionState.Stopped, service.State);
+                AssertEx.Equal(1, factory.Created[0].Count<ProtocolMessage.ReleaseMomentaryLayerCommand>());
+                if (transportKind == TransportKind.Bluetooth)
+                {
+                    AssertEx.Equal(
+                        BluetoothConnectionMode.PowerSaving,
+                        factory.Created[0].Last<ProtocolMessage.SetBluetoothConnectionModeCommand>().Mode);
+                }
+
+                continue;
+            }
+
+            factory.Created[0].RaiseConnectionLost();
+            await WaitUntilAsync(
+                () => factory.Created.Count >= 2 && service.State == CompanionConnectionState.Connected,
+                $"Stress cycle {cycle} did not reconnect over {transportKind}.");
+            AssertEx.Equal(
+                ShortcutRouteKind.RepeatSuppressed,
+                service.SubmitShortcutEvent(F23(ShortcutKeyState.Down, isInjected: true)));
+            AssertEx.Equal(
+                ShortcutRouteKind.Ignored,
+                service.SubmitShortcutEvent(F23(ShortcutKeyState.Up, isInjected: true)));
+            AssertEx.Equal(
+                ShortcutRouteKind.Pressed,
+                service.SubmitShortcutEvent(F23(ShortcutKeyState.Down, isInjected: true)));
+            await WaitUntilAsync(
+                () => factory.Created[1].Count<ProtocolMessage.PressMomentaryLayerCommand>() == 1,
+                $"Stress cycle {cycle} did not accept a fresh press after reconnect.");
+            AssertEx.Equal(
+                ShortcutRouteKind.Released,
+                service.SubmitShortcutEvent(F23(ShortcutKeyState.Up, isInjected: true)));
+            await WaitUntilAsync(
+                () => factory.Created[1].Count<ProtocolMessage.ReleaseMomentaryLayerCommand>() == 1,
+                $"Stress cycle {cycle} did not release after reconnect.");
+            await service.StopAsync();
+            AssertEx.Equal(CompanionConnectionState.Stopped, service.State);
+        }
     }
 
     private static async ValueTask VerifySyntheticMomentaryLifecycleAsync()
@@ -315,6 +381,12 @@ internal static class CompanionServiceTests
 
     private static void VerifyBluetoothConnectionModePolicy()
     {
+        BluetoothConnectionModePolicy disabled = BluetoothConnectionModePolicy.FromSettings(new AdaptiveBluetoothSettings { Enabled = false });
+        AssertEx.Equal(BluetoothConnectionMode.PowerSaving, disabled.GetMode(false, TimeSpan.Zero));
+        BluetoothConnectionModePolicy custom = BluetoothConnectionModePolicy.FromSettings(
+            new AdaptiveBluetoothSettings { IdleAfterSeconds = 120, UseIdleWhenLocked = false });
+        AssertEx.Equal(BluetoothConnectionMode.Interactive, custom.GetMode(true, TimeSpan.FromSeconds(119)));
+        AssertEx.Equal(BluetoothConnectionMode.PowerSaving, custom.GetMode(false, TimeSpan.FromSeconds(120)));
         BluetoothConnectionModePolicy policy = new(TimeSpan.FromSeconds(60));
         AssertEx.Equal(
             BluetoothConnectionMode.Interactive,
@@ -327,6 +399,94 @@ internal static class CompanionServiceTests
             policy.GetMode(sessionLocked: true, TimeSpan.Zero));
         AssertEx.Throws<ArgumentOutOfRangeException>(
             () => policy.GetMode(sessionLocked: false, TimeSpan.FromMilliseconds(-1)));
+    }
+
+    private static async ValueTask VerifyConnectionDiagnosticsAsync()
+    {
+        LayoutManifest manifest = CreateManifest();
+        FakeTransportFactory factory = new(manifest, static (kind, _) => new FakeProtocolKeyboardTransport(kind)
+        {
+            History = ShinyGo60.Tests.Protocol.ConnectionHistoryTests.CreateSnapshot(42, 18, 19),
+        });
+        RecordingDiagnosticSink sink = new();
+        await using CompanionService service = new(
+            manifest,
+            new ResolvedCompanionConfiguration(
+                TransportPreference.Bluetooth,
+                [new ShortcutBinding(ShortcutGesture.Parse("F23"), ShortcutActionKind.MomentaryLayer, 1, "Navigation")]),
+            factory,
+            new ExponentialReconnectDelayPolicy(TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(20)),
+            sink,
+            CompanionServiceOptions.Default with { BluetoothHealthCheckInterval = TimeSpan.FromMilliseconds(1250) });
+        await service.StartAsync();
+        await WaitUntilAsync(() => service.State == CompanionConnectionState.Connected, "The diagnostic session did not connect.");
+        DiagnosticEvent snapshot = sink.Events.First(item =>
+            item.EventName == "exchange_received" && item.Properties!["requestType"] == "GetState");
+        AssertEx.True(uint.Parse(snapshot.Properties!["requestId"], System.Globalization.CultureInfo.InvariantCulture) != 0, "Missing request ID.");
+        AssertEx.True(snapshot.Properties.ContainsKey("sessionId"), "Missing session ID.");
+        AssertEx.True(snapshot.Properties.ContainsKey("elapsedMs"), "Missing exchange duration.");
+
+        await WaitUntilAsync(() => sink.Events.Count(item => item.EventName == "firmware_connection_event") == 2, "Missing background history.");
+        AssertEx.Equal("17", sink.Events.First(item => item.EventName == "firmware_connection_event").Properties!["missedEvents"]);
+        factory.Created[0].HistoryFailure = new IOException("Synthetic diagnostic read failure.");
+        await WaitUntilAsync(() => sink.Events.Any(item => item.EventName == "firmware_history_failed"), "Missing history failure.");
+        AssertEx.Equal(CompanionConnectionState.Connected, service.State);
+        AssertEx.Equal(1, factory.Created.Count);
+        factory.Created[0].HistoryFailure = null;
+
+        IOException failure = new("Synthetic GATT failure.");
+        failure.Data["operation"] = "write";
+        failure.Data["gattStatus"] = "ProtocolError";
+        failure.Data["attError"] = "0x0E";
+        failure.Data["connectionStatus"] = "Connected";
+        failure.Data["privateDeviceAddress"] = "must-not-be-logged";
+        factory.Created[0].NextExchangeFailure = failure;
+        await WaitUntilAsync(() => sink.Events.Any(item => item.EventName == "exchange_failed"), "The failed exchange was not logged.");
+        await WaitUntilAsync(() => factory.Created.Count >= 2 && service.State == CompanionConnectionState.Connected, "Diagnostics prevented recovery.");
+        AssertEx.Equal(2, sink.Events.Count(item => item.EventName == "firmware_connection_event"));
+        factory.Created[1].History = ShinyGo60.Tests.Protocol.ConnectionHistoryTests.CreateSnapshot(43, 1);
+        await WaitUntilAsync(() => sink.Events.Count(item => item.EventName == "firmware_boot") == 2, "The reboot was not detected.");
+        await WaitUntilAsync(() => sink.Events.Count(item => item.EventName == "firmware_connection_event") == 3, "The new boot history was skipped.");
+        await service.StopAsync();
+        DiagnosticEvent failedExchange = sink.Events.First(item => item.EventName == "exchange_failed");
+        AssertEx.Equal("GetState", failedExchange.Properties!["requestType"]);
+        AssertEx.Equal("write", failedExchange.Properties["operation"]);
+        AssertEx.Equal("0x0E", failedExchange.Properties["attError"]);
+        AssertEx.Equal("Connected", failedExchange.Properties["connectionStatus"]);
+        AssertEx.True(!failedExchange.Properties.ContainsKey("privateDeviceAddress"), "Private exception data leaked into diagnostics.");
+        DiagnosticEvent failedConnection = sink.Events.First(item => item.EventName == "connection_failed");
+        AssertEx.Equal("ProtocolError", failedConnection.Properties!["gattStatus"]);
+    }
+
+    private static async ValueTask VerifyHistoryDoesNotBlockControlAsync()
+    {
+        LayoutManifest manifest = CreateManifest();
+        FakeTransportFactory factory = new(manifest, static (kind, _) => new FakeProtocolKeyboardTransport(kind) { BlockHistoryRead = true });
+        await using CompanionService service = new(
+            manifest,
+            new ResolvedCompanionConfiguration(TransportPreference.Bluetooth,
+                [new ShortcutBinding(ShortcutGesture.Parse("F23"), ShortcutActionKind.MomentaryLayer, 1, "Navigation")]),
+            factory, ExponentialReconnectDelayPolicy.Default, NullDiagnosticSink.Instance);
+        await service.StartAsync();
+        await WaitUntilAsync(() => factory.Created.Count > 0 && factory.Created[0].HistoryReadStarted, "The background read did not start.");
+        AssertEx.Equal(ShortcutRouteKind.Pressed, service.SubmitShortcutEvent(F23(ShortcutKeyState.Down)));
+        await WaitUntilAsync(() => factory.Created[0].Count<ProtocolMessage.PressMomentaryLayerCommand>() == 1, "History blocked the layer press.");
+        AssertEx.Equal(ShortcutRouteKind.Released, service.SubmitShortcutEvent(F23(ShortcutKeyState.Up)));
+        await WaitUntilAsync(() => factory.Created[0].Count<ProtocolMessage.ReleaseMomentaryLayerCommand>() == 1, "History blocked the layer release.");
+        await WaitUntilAsync(() => factory.Created[0].HistoryReadCancelled, "Control did not cancel history collection.");
+        AssertEx.Equal(CompanionConnectionState.Connected, service.State);
+    }
+
+    private sealed class RecordingDiagnosticSink : IDiagnosticSink
+    {
+        public ConcurrentQueue<DiagnosticEvent> Events { get; } = new();
+
+        public ValueTask WriteAsync(DiagnosticEvent diagnosticEvent, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            this.Events.Enqueue(diagnosticEvent);
+            return ValueTask.CompletedTask;
+        }
     }
 
     private static CompanionService CreateService(
@@ -416,7 +576,7 @@ internal static class CompanionServiceTests
         }
     }
 
-    private sealed class FakeProtocolKeyboardTransport : IKeyboardTransport, IKeyboardTransportConnectionEvents
+    private sealed class FakeProtocolKeyboardTransport : IKeyboardTransport, IKeyboardTransportConnectionEvents, IKeyboardConnectionHistory
     {
         private static int nextSessionId;
         private readonly ConcurrentQueue<ProtocolMessage> requests = new();
@@ -448,6 +608,38 @@ internal static class CompanionServiceTests
 
         public LayoutFingerprint Layout { get; set; }
 
+        public Exception? NextExchangeFailure { get; set; }
+        public ReadOnlyMemory<byte> History { get; set; }
+        public Exception? HistoryFailure { get; set; }
+        public bool BlockHistoryRead { get; init; }
+        public bool HistoryReadStarted { get; private set; }
+        public bool HistoryReadCancelled { get; private set; }
+
+        public async ValueTask<ReadOnlyMemory<byte>> ReadConnectionHistoryAsync(
+            ConnectionHistoryPosition after, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            this.HistoryReadStarted = true;
+            if (this.BlockHistoryRead)
+            {
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    this.HistoryReadCancelled = true;
+                    throw;
+                }
+            }
+            if (this.HistoryFailure is Exception failure)
+            {
+                throw failure;
+            }
+
+            return this.History;
+        }
+
         public ValueTask ConnectAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -465,6 +657,11 @@ internal static class CompanionServiceTests
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (this.NextExchangeFailure is Exception failure)
+            {
+                this.NextExchangeFailure = null;
+                throw failure;
+            }
             if (!this.IsConnected)
             {
                 throw new IOException($"Fake {this.Kind} is disconnected.");

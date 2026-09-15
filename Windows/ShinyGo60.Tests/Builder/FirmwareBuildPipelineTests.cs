@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using ShinyGo60.Builder.Core.Build;
 using ShinyGo60.Builder.Core.Processes;
 using ShinyGo60.Protocol.Manifests;
@@ -29,6 +31,8 @@ internal static class FirmwareBuildPipelineTests
             await VerifyMissingOutputFailureAsync(Path.Combine(temporaryRoot, "stale output guard"));
             await VerifyUnexpectedImageMetadataFailureAsync(Path.Combine(temporaryRoot, "wrong image guard"));
             await VerifyCancellationCleanupAsync(Path.Combine(temporaryRoot, "cancel case"));
+            VerifyOutputRetention(Path.Combine(temporaryRoot, "rotation"));
+            VerifyPublicationRollback(Path.Combine(temporaryRoot, "rollback"));
         }
         finally
         {
@@ -56,8 +60,8 @@ internal static class FirmwareBuildPipelineTests
         AssertEx.True(File.Exists(first.ManifestPath), "A successful build should publish its manifest.");
         AssertEx.True(File.Exists(first.LogPath), "A successful build should publish its log.");
         AssertEx.True(
-            !string.Equals(first.OutputSetDirectory, second.OutputSetDirectory, StringComparison.OrdinalIgnoreCase),
-            "Repeated builds should publish separate complete output sets.");
+            string.Equals(request.OutputDirectory, second.OutputSetDirectory, StringComparison.OrdinalIgnoreCase),
+            "The newest firmware should always be published in Output itself.");
 
         LayoutManifest manifest = await LayoutManifestJson.ReadAsync(first.ManifestPath);
         AssertEx.Equal(first.LayoutIdentifier, manifest.LayoutIdentifier);
@@ -66,7 +70,7 @@ internal static class FirmwareBuildPipelineTests
         AssertEx.True(
             (await File.ReadAllTextAsync(first.LogPath)).Contains("Status: succeeded", StringComparison.Ordinal),
             "The matched build log should record success.");
-        AssertEx.Equal(2, Directory.GetDirectories(request.OutputDirectory, "ShinyGo60-*").Length);
+        AssertEx.Equal(1, Directory.GetDirectories(request.OutputDirectory, "Firmware-*").Length);
         AssertEx.Equal(0, Directory.GetDirectories(request.GeneratedWorkspaceDirectory, "build-*").Length);
 
         ProcessInvocation dockerRun = runner.Invocations.Find(invocation => invocation.Arguments[0] == "run")
@@ -100,8 +104,100 @@ internal static class FirmwareBuildPipelineTests
 
         AssertEx.True(exception.FailureLogPath is not null, "Compiler failures should retain a clearly named failure log.");
         AssertEx.True(File.Exists(exception.FailureLogPath), "The failure log should exist.");
+        AssertEx.True(!Directory.Exists(Path.Combine(request.OutputDirectory, "Failures")), "Failure logs should stay outside firmware output.");
         AssertEx.Equal(0, Directory.GetDirectories(request.OutputDirectory, "ShinyGo60-*").Length);
         AssertEx.Equal(0, Directory.GetDirectories(request.GeneratedWorkspaceDirectory, "build-*").Length);
+    }
+
+    private static void VerifyOutputRetention(string root)
+    {
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "personal-notes.txt"), "keep");
+        Directory.CreateDirectory(Path.Combine(root, "Firmware-unmanaged"));
+        DateTimeOffset created = new(2026, 9, 10, 1, 2, 3, TimeSpan.FromHours(9));
+        for (int index = 0; index < 7; index++)
+        {
+            string stage = CreateOutputStage(root, index.ToString(CultureInfo.InvariantCulture));
+            FirmwareOutputStore.Publish(stage, root, created.AddHours(index), Guid.NewGuid().ToString("N"));
+            if (index == 4)
+            {
+                string oldest = Directory.GetDirectories(root, "Firmware-*").Single(path =>
+                    File.Exists(Path.Combine(path, FirmwareOutputStore.Uf2FileName)) &&
+                    File.ReadAllText(Path.Combine(path, FirmwareOutputStore.Uf2FileName)) == "0");
+                foreach (string file in Directory.GetFiles(oldest))
+                {
+                    File.SetAttributes(file, File.GetAttributes(file) | FileAttributes.ReadOnly);
+                }
+
+                File.SetAttributes(oldest, File.GetAttributes(oldest) | FileAttributes.ReadOnly);
+            }
+        }
+
+        AssertEx.Equal("6", File.ReadAllText(Path.Combine(root, FirmwareOutputStore.Uf2FileName)));
+        string[] archives = Directory.GetDirectories(root, "Firmware-*")
+            .Where(path => File.Exists(Path.Combine(path, FirmwareOutputStore.MetadataFileName))).ToArray();
+        AssertEx.Equal(4, archives.Length);
+        string[] retained = archives.Select(path => File.ReadAllText(Path.Combine(path, FirmwareOutputStore.Uf2FileName)))
+            .OrderBy(value => value, StringComparer.Ordinal).ToArray();
+        AssertEx.Equal("2,3,4,5", string.Join(',', retained));
+        foreach (string archive in archives)
+        {
+            string value = File.ReadAllText(Path.Combine(archive, FirmwareOutputStore.Uf2FileName));
+            AssertEx.Equal(value, File.ReadAllText(Path.Combine(archive, "layout-manifest.json")));
+            AssertEx.Equal(value, File.ReadAllText(Path.Combine(archive, "build.log")));
+            FirmwareOutputMetadata metadata = JsonSerializer.Deserialize<FirmwareOutputMetadata>(
+                File.ReadAllText(Path.Combine(archive, FirmwareOutputStore.MetadataFileName)))!;
+            AssertEx.Equal(created.AddHours(int.Parse(value, CultureInfo.InvariantCulture)), metadata.CreatedAt);
+            string timestamp = metadata.CreatedAt.ToString("yyyy-MM-dd_HH-mm-ss-fff", CultureInfo.InvariantCulture);
+            AssertEx.True(Path.GetFileName(archive).Contains(timestamp, StringComparison.Ordinal),
+                "Archives should use the build's creation date, not its later rotation date.");
+        }
+
+        AssertEx.Equal("keep", File.ReadAllText(Path.Combine(root, "personal-notes.txt")));
+        AssertEx.True(Directory.Exists(Path.Combine(root, "Firmware-unmanaged")), "Unmarked directories must not be pruned.");
+        AssertEx.True(!File.Exists(Path.Combine(root, ".shinygo60-output.lock")), "Publishing must remove its lock file.");
+    }
+
+    private static void VerifyPublicationRollback(string root)
+    {
+        Directory.CreateDirectory(root);
+        DateTimeOffset created = DateTimeOffset.UtcNow;
+        FirmwareOutputStore.Publish(CreateOutputStage(root, "previous"), root, created, Guid.NewGuid().ToString("N"));
+        string stage = CreateOutputStage(root, "next");
+        // The UF2 move succeeds first; locking the manifest exercises rollback of an already moved file.
+        using (FileStream heldFile = new(Path.Combine(root, "layout-manifest.json"), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            AssertEx.Throws<IOException>(() => FirmwareOutputStore.Publish(stage, root, created.AddMinutes(1), Guid.NewGuid().ToString("N")));
+        }
+
+        AssertEx.Equal("previous", File.ReadAllText(Path.Combine(root, FirmwareOutputStore.Uf2FileName)));
+        AssertEx.Equal("previous", File.ReadAllText(Path.Combine(root, "layout-manifest.json")));
+        AssertEx.Equal("next", File.ReadAllText(Path.Combine(stage, FirmwareOutputStore.Uf2FileName)));
+        AssertEx.Equal(0, Directory.GetDirectories(root, "Firmware-*").Length);
+        using (FileStream heldFile = new(Path.Combine(stage, "build.log"), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            AssertEx.Throws<IOException>(() => FirmwareOutputStore.Publish(stage, root, created.AddMinutes(1), Guid.NewGuid().ToString("N")));
+        }
+
+        AssertEx.Equal("previous", File.ReadAllText(Path.Combine(root, FirmwareOutputStore.Uf2FileName)));
+        AssertEx.Equal("previous", File.ReadAllText(Path.Combine(root, "build.log")));
+        AssertEx.Equal("next", File.ReadAllText(Path.Combine(stage, "layout-manifest.json")));
+        AssertEx.Equal(0, Directory.GetDirectories(root, "Firmware-*").Length);
+        FirmwareOutputStore.Publish(stage, root, created, Guid.NewGuid().ToString("N"));
+        FirmwareOutputStore.Publish(CreateOutputStage(root, "same timestamp"), root, created, Guid.NewGuid().ToString("N"));
+        AssertEx.Equal(2, Directory.GetDirectories(root, "Firmware-*").Length);
+    }
+
+    private static string CreateOutputStage(string root, string value)
+    {
+        string stage = Path.Combine(root, ".shinygo60-stage-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(stage);
+        foreach (string name in new[] { FirmwareOutputStore.Uf2FileName, "layout-manifest.json", "build.log" })
+        {
+            File.WriteAllText(Path.Combine(stage, name), value);
+        }
+
+        return stage;
     }
 
     private static async ValueTask VerifyMissingOutputFailureAsync(string caseRoot)

@@ -1,6 +1,7 @@
 using ShinyGo60.Tests.Builder;
 using ShinyGo60.Tests.Companion;
 using ShinyGo60.Tests.Diagnostics;
+using ShinyGo60.Tests.Hardening;
 using ShinyGo60.Tests.Protocol;
 using ShinyGo60.Tests.Testing;
 
@@ -15,6 +16,10 @@ internal static class Program
             new("Protocol manifest contracts", ProtocolContractTests.RunAsync),
             new("Shared protocol-v1 byte vectors", ProtocolCodecTests.RunAsync),
             new("USB/Bluetooth transport contract", TransportContractTests.RunAsync),
+            new("Wireless connection history", ConnectionHistoryTests.RunAsync),
+            new("Background history and saved progress", ConnectionHistoryCollectorTests.RunAsync),
+            new("Local diagnostic export", DiagnosticBundleExporterTests.RunAsync),
+            new("Connection issue analysis", ConnectionIssueAnalyzerTests.RunAsync),
             new("Go60 keymap inspection and layout artifacts", KeymapInspectionTests.RunAsync),
             new("Atomic keymap-to-UF2 pipeline", FirmwareBuildPipelineTests.RunAsync),
             new("Builder process orchestration contract", ProcessContractTests.RunAsync),
@@ -26,6 +31,7 @@ internal static class Program
             new("Layer-command failure recovery", LayerCommandStateMachineTests.RunAsync),
             new("Per-half battery state convergence", BatteryStateTrackerTests.RunAsync),
             new("Structured diagnostic sink", DiagnosticSinkTests.RunAsync),
+            new("Step 16 deterministic stress", Step16HardeningTests.RunAsync),
         ];
 
         return TestRunner.RunAsync(tests);

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "transportPreference": "bluetooth",
+  "shortcuts": [
+    {
+      "shortcut": "F23",
+      "action": "momentaryLayer",
+      "targetLayer": "WindowsAndSymbols"
+    }
+  ],
+  "widgetTaskbar": {
+    "mode": "all",
+    "monitorId": null
+  },
+  "adaptiveBluetooth": {
+    "enabled": false,
+    "activeLatency": 4,
+    "idleLatency": 30,
+    "idleAfterSeconds": 60,
+    "minimumSwitchSeconds": 30,
+    "useIdleWhenLocked": true
+  }
+}

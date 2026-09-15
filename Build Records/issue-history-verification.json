@@ -1,0 +1,15 @@
+{
+  "companionVersion": "1.3.0",
+  "firmwareChangeRequired": false,
+  "compilation": "Passed, zero warnings/errors",
+  "testGroups": "19/19 passed",
+  "realExportReplay": "2026-09-11 15:29: code 40, 93 seconds, 31 failed reconnects, 31 security failures, 6 Windows errors",
+  "windowsEventReader": "Passed against live Windows event log",
+  "packageVerification": "Passed",
+  "liveConnection": "Validated Bluetooth session at 19:37:32 JST",
+  "liveHistory": "Firmware 0.10.1 collection complete at 19:37:34 JST",
+  "settings": "Adaptive disabled, fixed latency 30; existing F23 shortcut preserved",
+  "riderInspection": "Unavailable: Go60 is not open in Rider",
+  "visualLayout": "Not visually inspected",
+  "guide": "Custom Firmware/BuildSupport/COMPANION_ISSUE_HISTORY.md"
+}

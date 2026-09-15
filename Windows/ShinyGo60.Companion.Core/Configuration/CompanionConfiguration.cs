@@ -8,4 +8,5 @@ public sealed record CompanionConfiguration(
     public const int CurrentSchemaVersion = 1;
 
     public WidgetTaskbarSelection? WidgetTaskbar { get; init; }
+    public AdaptiveBluetoothSettings? AdaptiveBluetooth { get; init; }
 }

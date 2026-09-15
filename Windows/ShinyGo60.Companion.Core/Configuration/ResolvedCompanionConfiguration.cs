@@ -7,4 +7,5 @@ public sealed record ResolvedCompanionConfiguration(
     IReadOnlyList<ShortcutBinding> Shortcuts)
 {
     public WidgetTaskbarSelection WidgetTaskbar { get; init; } = WidgetTaskbarSelection.Primary;
+    public AdaptiveBluetoothSettings AdaptiveBluetooth { get; init; } = new();
 }

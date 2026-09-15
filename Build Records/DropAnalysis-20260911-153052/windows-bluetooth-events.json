@@ -1,0 +1,44 @@
+[
+  {
+    "TimeCreated": "2026-09-11T15:29:11.7804101+09:00",
+    "Id": 5,
+    "ProviderName": "BTHUSB",
+    "Message": "The Bluetooth driver expected an HCI event with a certain size but did not receive it."
+  },
+  {
+    "TimeCreated": "2026-09-11T15:29:15.479243+09:00",
+    "Id": 5,
+    "ProviderName": "BTHUSB",
+    "Message": "The Bluetooth driver expected an HCI event with a certain size but did not receive it."
+  },
+  {
+    "TimeCreated": "2026-09-11T15:29:18.4993402+09:00",
+    "Id": 5,
+    "ProviderName": "BTHUSB",
+    "Message": "The Bluetooth driver expected an HCI event with a certain size but did not receive it."
+  },
+  {
+    "TimeCreated": "2026-09-11T15:29:21.3801445+09:00",
+    "Id": 5,
+    "ProviderName": "BTHUSB",
+    "Message": "The Bluetooth driver expected an HCI event with a certain size but did not receive it."
+  },
+  {
+    "TimeCreated": "2026-09-11T15:29:26.5109378+09:00",
+    "Id": 5,
+    "ProviderName": "BTHUSB",
+    "Message": "The Bluetooth driver expected an HCI event with a certain size but did not receive it."
+  },
+  {
+    "TimeCreated": "2026-09-11T15:29:29.8107737+09:00",
+    "Id": 5,
+    "ProviderName": "BTHUSB",
+    "Message": "The Bluetooth driver expected an HCI event with a certain size but did not receive it."
+  },
+  {
+    "TimeCreated": "2026-09-11T15:30:38.6155894+09:00",
+    "Id": 18,
+    "ProviderName": "BTHUSB",
+    "Message": "Windows cannot store Bluetooth authentication codes (link keys) on the local adapter. Bluetooth keyboards might not work in the system BIOS during start-up."
+  }
+]

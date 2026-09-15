@@ -5,9 +5,17 @@
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
 #include <shinygo60/protocol.h>
+#include <shinygo60/connection_history.h>
+
+#if IS_ENABLED(CONFIG_SHINYGO60_CONNECTION_DIAGNOSTICS)
+LOG_MODULE_REGISTER(shinygo60_ble, LOG_LEVEL_INF);
+#else
+LOG_MODULE_REGISTER(shinygo60_ble, LOG_LEVEL_NONE);
+#endif
 
 #define SHINYGO60_BT_UUID(number) BT_UUID_128_ENCODE(number, 0x7f76, 0x4c2a, 0x9c46, 0x9b7317f6a1e0)
 #define SHINYGO60_BT_SERVICE_UUID SHINYGO60_BT_UUID(0x5a9c0000)
@@ -20,6 +28,8 @@
 BUILD_ASSERT(IS_ENABLED(CONFIG_ZMK_BLE), "The ShinyGo60 Bluetooth transport requires ZMK BLE");
 BUILD_ASSERT(CONFIG_SHINYGO60_BLE_INTERACTIVE_LATENCY <= CONFIG_BT_PERIPHERAL_PREF_LATENCY,
              "Interactive Bluetooth latency must not exceed the power-saving latency");
+BUILD_ASSERT(CONFIG_BT_PERIPHERAL_PREF_TIMEOUT * 8 > CONFIG_BT_PERIPHERAL_PREF_MAX_INT * 2 * 100,
+             "Custom latency up to 99 must fit the supervision timeout");
 
 static bool indication_pending;
 static bool response_queued;
@@ -35,6 +45,10 @@ static enum shinygo60_bluetooth_connection_mode connection_mode =
 static bool interactive_lease_active;
 static int64_t interactive_lease_expires_at;
 static uint8_t connection_parameter_retry_count;
+static uint16_t active_latency = CONFIG_SHINYGO60_BLE_INTERACTIVE_LATENCY;
+static uint16_t idle_latency = CONFIG_BT_PERIPHERAL_PREF_LATENCY;
+static uint16_t minimum_switch_seconds = 30U;
+static int64_t last_parameter_update_at = -300000;
 
 static void indicate_response_work_handler(struct k_work *work);
 static K_WORK_DEFINE(indicate_response_work, indicate_response_work_handler);
@@ -46,8 +60,8 @@ static K_WORK_DELAYABLE_DEFINE(interactive_lease_work, interactive_lease_work_ha
 static uint16_t desired_peripheral_latency(void)
 {
     return connection_mode == SHINYGO60_BLUETOOTH_INTERACTIVE && interactive_lease_active
-               ? CONFIG_SHINYGO60_BLE_INTERACTIVE_LATENCY
-               : CONFIG_BT_PERIPHERAL_PREF_LATENCY;
+               ? active_latency
+               : idle_latency;
 }
 
 static void schedule_connection_parameter_update(void)
@@ -65,13 +79,16 @@ static void set_owner_connection(struct bt_conn *connection)
     interactive_lease_active = false;
     interactive_lease_expires_at = 0;
     connection_parameter_retry_count = 0U;
+    active_latency = CONFIG_SHINYGO60_BLE_INTERACTIVE_LATENCY;
+    idle_latency = CONFIG_BT_PERIPHERAL_PREF_LATENCY;
+    minimum_switch_seconds = 30U;
     k_spin_unlock(&owner_lock, key);
 
     if (previous != NULL) {
         bt_conn_unref(previous);
     }
 
-    schedule_connection_parameter_update();
+    (void)k_work_cancel_delayable(&connection_parameter_work);
     (void)k_work_cancel_delayable(&interactive_lease_work);
 }
 
@@ -99,7 +116,21 @@ static void connection_parameter_work_handler(struct k_work *work)
 
     k_spinlock_key_t key = k_spin_lock(&owner_lock);
     uint16_t requested_latency = desired_peripheral_latency();
+    int64_t remaining = last_parameter_update_at + minimum_switch_seconds * 1000LL - k_uptime_get();
     k_spin_unlock(&owner_lock, key);
+
+    if (remaining > 0) {
+        bt_conn_unref(connection);
+        (void)k_work_reschedule(&connection_parameter_work, K_MSEC(remaining));
+        return;
+    }
+
+    struct bt_conn_info info;
+    if (bt_conn_get_info(connection, &info) == 0 && info.type == BT_CONN_TYPE_LE &&
+        info.le.latency == requested_latency) {
+        bt_conn_unref(connection);
+        return;
+    }
 
     int result = bt_conn_le_param_update(
         connection,
@@ -108,9 +139,19 @@ static void connection_parameter_work_handler(struct k_work *work)
                          requested_latency,
                          CONFIG_BT_PERIPHERAL_PREF_TIMEOUT));
 
+    LOG_INF("parameters_requested conn=%u min_interval=%u max_interval=%u latency=%u timeout=%u result=%d",
+            bt_conn_index(connection), CONFIG_BT_PERIPHERAL_PREF_MIN_INT, CONFIG_BT_PERIPHERAL_PREF_MAX_INT,
+            requested_latency, CONFIG_BT_PERIPHERAL_PREF_TIMEOUT, result);
+    shinygo60_connection_record(SHINYGO60_PARAMETERS_REQUESTED, connection, result,
+                               CONFIG_BT_PERIPHERAL_PREF_MIN_INT, CONFIG_BT_PERIPHERAL_PREF_MAX_INT,
+                               requested_latency, CONFIG_BT_PERIPHERAL_PREF_TIMEOUT);
+
     k_timeout_t retry_delay = K_NO_WAIT;
     bool retry = false;
     key = k_spin_lock(&owner_lock);
+    if (owner_connection == connection && result == 0) {
+        last_parameter_update_at = k_uptime_get();
+    }
     if (owner_connection == connection && desired_peripheral_latency() != requested_latency) {
         connection_parameter_retry_count = 0U;
         retry_delay = CONNECTION_PARAMETER_SETTLE_DELAY;
@@ -151,6 +192,8 @@ static void interactive_lease_work_handler(struct k_work *work)
     k_spin_unlock(&owner_lock, key);
 
     if (expired) {
+        LOG_INF("interactive_lease_expired");
+        shinygo60_connection_record(SHINYGO60_LEASE_EXPIRED, NULL, 0, 0, 0, 0, 0);
         schedule_connection_parameter_update();
     } else if (remaining > 0) {
         (void)k_work_reschedule(&interactive_lease_work, K_MSEC(remaining));
@@ -158,7 +201,8 @@ static void interactive_lease_work_handler(struct k_work *work)
 }
 
 enum shinygo60_bluetooth_mode_result shinygo60_ble_set_connection_mode(
-    enum shinygo60_bluetooth_connection_mode mode)
+    enum shinygo60_bluetooth_connection_mode mode,
+    uint16_t requested_active_latency, uint16_t requested_idle_latency, uint16_t requested_minimum_switch_seconds)
 {
     if (mode != SHINYGO60_BLUETOOTH_POWER_SAVING &&
         mode != SHINYGO60_BLUETOOTH_INTERACTIVE) {
@@ -174,6 +218,11 @@ enum shinygo60_bluetooth_mode_result shinygo60_ble_set_connection_mode(
 
     uint16_t previous_latency = desired_peripheral_latency();
     bool mode_changed = connection_mode != mode;
+    bool settings_changed = active_latency != requested_active_latency || idle_latency != requested_idle_latency ||
+                            minimum_switch_seconds != requested_minimum_switch_seconds;
+    active_latency = requested_active_latency;
+    idle_latency = requested_idle_latency;
+    minimum_switch_seconds = requested_minimum_switch_seconds;
     connection_mode = mode;
     if (mode == SHINYGO60_BLUETOOTH_INTERACTIVE) {
         interactive_lease_active = true;
@@ -200,7 +249,7 @@ enum shinygo60_bluetooth_mode_result shinygo60_ble_set_connection_mode(
         schedule_connection_parameter_update();
     }
 
-    return mode_changed || latency_changed ? SHINYGO60_BLUETOOTH_MODE_APPLIED
+    return mode_changed || latency_changed || settings_changed ? SHINYGO60_BLUETOOTH_MODE_APPLIED
                                            : SHINYGO60_BLUETOOTH_MODE_NO_CHANGE;
 }
 
@@ -234,6 +283,8 @@ void shinygo60_ble_reset_connection_mode(void)
 {
     k_spinlock_key_t key = k_spin_lock(&owner_lock);
     bool changed = desired_peripheral_latency() != CONFIG_BT_PERIPHERAL_PREF_LATENCY;
+    active_latency = CONFIG_SHINYGO60_BLE_INTERACTIVE_LATENCY;
+    idle_latency = CONFIG_BT_PERIPHERAL_PREF_LATENCY;
     connection_mode = SHINYGO60_BLUETOOTH_POWER_SAVING;
     interactive_lease_active = false;
     interactive_lease_expires_at = 0;
@@ -339,6 +390,8 @@ static void complete_indication(void)
 static void indication_configuration_changed(const struct bt_gatt_attr *attribute, uint16_t value)
 {
     ARG_UNUSED(attribute);
+    LOG_INF("indication_subscription value=%u", value);
+    shinygo60_connection_record(SHINYGO60_SUBSCRIPTION_CHANGED, NULL, 0, value, 0, 0, 0);
 
     if (value != BT_GATT_CCC_INDICATE) {
         shinygo60_protocol_transport_disconnected(SHINYGO60_TRANSPORT_BLUETOOTH);
@@ -402,11 +455,41 @@ static ssize_t write_message(struct bt_conn *connection, const struct bt_gatt_at
     shinygo60_ble_note_companion_activity();
 
     if (!enqueue_indication(connection, response, true)) {
+        LOG_WRN("response_enqueue_failed conn=%u request_type=%u", bt_conn_index(connection), request[3]);
+        shinygo60_connection_record(SHINYGO60_RESPONSE_QUEUE_FAILED, connection, 0, request[3], 0, 0, 0);
         return BT_GATT_ERR(BT_ATT_ERR_UNLIKELY);
     }
 
     return length;
 }
+
+#if IS_ENABLED(CONFIG_SHINYGO60_CONNECTION_DIAGNOSTICS)
+static ssize_t read_connection_history(struct bt_conn *connection, const struct bt_gatt_attr *attribute,
+                                       void *buffer, uint16_t length, uint16_t offset)
+{
+    if (!is_encrypted_bonded_host(connection)) {
+        return BT_GATT_ERR(BT_ATT_ERR_AUTHORIZATION);
+    }
+    if (attribute->user_data == (void *)1) {
+        return shinygo60_connection_history_info(connection, attribute, buffer, length, offset);
+    }
+    if (attribute->user_data == (void *)2) {
+        return shinygo60_connection_history_context(connection, attribute, buffer, length, offset);
+    }
+    return shinygo60_connection_history_read(connection, attribute, buffer, length, offset);
+}
+
+static ssize_t start_connection_history(struct bt_conn *connection, const struct bt_gatt_attr *attribute,
+                                        const void *buffer, uint16_t length, uint16_t offset, uint8_t flags)
+{
+    ARG_UNUSED(attribute);
+    ARG_UNUSED(flags);
+    if (!is_encrypted_bonded_host(connection)) {
+        return BT_GATT_ERR(BT_ATT_ERR_AUTHORIZATION);
+    }
+    return shinygo60_connection_history_start(connection, buffer, length, offset);
+}
+#endif
 
 BT_GATT_SERVICE_DEFINE(
     shinygo60_service, BT_GATT_PRIMARY_SERVICE(BT_UUID_DECLARE_128(SHINYGO60_BT_SERVICE_UUID)),
@@ -414,7 +497,20 @@ BT_GATT_SERVICE_DEFINE(
                            BT_GATT_CHRC_WRITE | BT_GATT_CHRC_INDICATE, BT_GATT_PERM_WRITE_ENCRYPT,
                            NULL, write_message, NULL),
     BT_GATT_CCC(indication_configuration_changed,
-                BT_GATT_PERM_READ_ENCRYPT | BT_GATT_PERM_WRITE_ENCRYPT));
+                BT_GATT_PERM_READ_ENCRYPT | BT_GATT_PERM_WRITE_ENCRYPT)
+#if IS_ENABLED(CONFIG_SHINYGO60_CONNECTION_DIAGNOSTICS)
+    , BT_GATT_CHARACTERISTIC(BT_UUID_DECLARE_128(SHINYGO60_BT_UUID(0x5a9c0002)),
+                             BT_GATT_CHRC_READ | BT_GATT_CHRC_WRITE,
+                             BT_GATT_PERM_READ_ENCRYPT | BT_GATT_PERM_WRITE_ENCRYPT,
+                             read_connection_history, start_connection_history, NULL),
+    BT_GATT_CHARACTERISTIC(BT_UUID_DECLARE_128(SHINYGO60_BT_UUID(0x5a9c0003)),
+                           BT_GATT_CHRC_READ, BT_GATT_PERM_READ_ENCRYPT,
+                           read_connection_history, NULL, (void *)1),
+    BT_GATT_CHARACTERISTIC(BT_UUID_DECLARE_128(SHINYGO60_BT_UUID(0x5a9c0004)),
+                           BT_GATT_CHRC_READ, BT_GATT_PERM_READ_ENCRYPT,
+                           read_connection_history, NULL, (void *)2)
+#endif
+);
 
 static void indication_complete(struct bt_conn *connection,
                                 struct bt_gatt_indicate_params *parameters, uint8_t error)
@@ -425,6 +521,8 @@ static void indication_complete(struct bt_conn *connection,
     if (error == 0U) {
         complete_indication();
     } else {
+        LOG_WRN("indication_failed conn=%u att_error=0x%02x", bt_conn_index(connection), error);
+        shinygo60_connection_record(SHINYGO60_INDICATION_FAILED, connection, error, 0, 0, 0, 0);
         discard_indications();
     }
 }
@@ -443,7 +541,10 @@ static void indicate_response_work_handler(struct k_work *work)
     k_spinlock_key_t key = k_spin_lock(&indication_lock);
     struct bt_conn *connection = pending_connection;
     k_spin_unlock(&indication_lock, key);
-    if (connection == NULL || bt_gatt_indicate(connection, &indication_parameters) < 0) {
+    int result = connection == NULL ? -ENOTCONN : bt_gatt_indicate(connection, &indication_parameters);
+    if (result < 0) {
+        LOG_WRN("indication_submit_failed result=%d", result);
+        shinygo60_connection_record(SHINYGO60_INDICATION_SUBMIT_FAILED, connection, result, 0, 0, 0, 0);
         discard_indications();
     }
 }

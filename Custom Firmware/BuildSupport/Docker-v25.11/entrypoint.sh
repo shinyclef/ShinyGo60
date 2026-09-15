@@ -21,6 +21,14 @@ fi
 echo "Building Go60 firmware from pinned ZMK commit ${actual_commit}" >&2
 
 cd /config
-nix-build --option substituters "" ./config --arg firmware 'import /src/default.nix {}' -j2 -o /tmp/combined --show-trace
+diagnostic_args=()
+if [[ "${SHINYGO60_CONNECTION_DIAGNOSTICS:-0}" == "1" ]]; then
+    diagnostic_args=(--arg connectionDiagnostics true)
+fi
+nix-build --option substituters "" ./config --arg firmware 'import /src/default.nix {}' "${diagnostic_args[@]}" -j2 -o /tmp/combined --show-trace
 install -m 0644 -o "${UID}" -g "${GID}" /tmp/combined/go60.uf2 ./go60.uf2.shinygo60-new
 mv -f ./go60.uf2.shinygo60-new ./go60.uf2
+if [[ "${SHINYGO60_CONNECTION_DIAGNOSTICS:-0}" == "1" ]]; then
+    mkdir -p ./diagnostic-evidence
+    install -m 0644 /tmp/combined/*.kconfig /tmp/combined/*.dts ./diagnostic-evidence/
+fi

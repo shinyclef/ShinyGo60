@@ -6,8 +6,11 @@
     <UseWPF>true</UseWPF>
     <RootNamespace>ShinyGo60.Companion</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Companion.ico</ApplicationIcon>
+    <Version>1.3.2</Version>
   </PropertyGroup>
   <ItemGroup>
+    <Resource Include="Assets\Companion.ico" />
     <ProjectReference Include="..\ShinyGo60.Companion.Core\ShinyGo60.Companion.Core.csproj" />
     <ProjectReference Include="..\ShinyGo60.Platform.Windows\ShinyGo60.Platform.Windows.csproj" />
   </ItemGroup>
