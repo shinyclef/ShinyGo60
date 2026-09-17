@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "protocolVersion": {
+    "major": 1,
+    "minor": 3
+  },
+  "layoutIdentifier": "sg60-v1-3b4093e0f4f18d59ed5cf6158181b82b",
+  "keymapSha256": "862952c15b378b9d2c7cb75d9627095ad77a01ba62f5e2e31d95083ef0ab4afe",
+  "firmwareRevision": "11454d23596afbdb06380a1125371b19ab65675c",
+  "layers": [
+    {
+      "id": 0,
+      "name": "Home"
+    },
+    {
+      "id": 1,
+      "name": "NoHRM"
+    },
+    {
+      "id": 2,
+      "name": "Qwerty"
+    },
+    {
+      "id": 3,
+      "name": "Navigation"
+    },
+    {
+      "id": 4,
+      "name": "Keypad"
+    },
+    {
+      "id": 5,
+      "name": "Shortcuts"
+    },
+    {
+      "id": 6,
+      "name": "Windows"
+    },
+    {
+      "id": 7,
+      "name": "Game"
+    },
+    {
+      "id": 8,
+      "name": "GameShortcuts"
+    },
+    {
+      "id": 9,
+      "name": "Magic"
+    },
+    {
+      "id": 10,
+      "name": "LeftPinky"
+    },
+    {
+      "id": 11,
+      "name": "LeftRingy"
+    },
+    {
+      "id": 12,
+      "name": "LeftMiddy"
+    },
+    {
+      "id": 13,
+      "name": "LeftIndex"
+    },
+    {
+      "id": 14,
+      "name": "RightPinky"
+    },
+    {
+      "id": 15,
+      "name": "RightRingy"
+    },
+    {
+      "id": 16,
+      "name": "RightMiddy"
+    },
+    {
+      "id": 17,
+      "name": "RightIndex"
+    }
+  ],
+  "builtAtUtc": "2026-09-15T13:16:25.7759446+00:00"
+}
